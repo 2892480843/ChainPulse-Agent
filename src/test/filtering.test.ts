@@ -9,11 +9,27 @@ describe("local mock data filters", () => {
       mode: "Risk Scan",
       verdict: "OBSERVE",
       minRisk: 20,
-      maxRisk: 45
+      maxRisk: 45,
+      startDate: "2026-06-05",
+      endDate: "2026-06-05"
     });
 
     expect(result).toHaveLength(1);
     expect(result[0].topic).toBe("ETH");
+  });
+
+  it("excludes reports outside the selected date range", () => {
+    const result = filterReports(reports, {
+      query: "",
+      mode: "All",
+      verdict: "All",
+      minRisk: 0,
+      maxRisk: 100,
+      startDate: "2026-06-04",
+      endDate: "2026-06-04"
+    });
+
+    expect(result.map((report) => report.topic)).toEqual(["Uniswap"]);
   });
 
   it("filters watchlist targets by query, category, and alert state", () => {

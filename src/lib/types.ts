@@ -38,7 +38,7 @@ export interface RunningTask {
   id: string;
   topic: string;
   mode: ScanMode;
-  status: "Running" | "Completed" | "Failed";
+  status: "Running" | "Completed" | "Failed" | "Cancelled";
   startedAt: string;
   elapsed: string;
   progress: number;
@@ -84,6 +84,8 @@ export interface ReportFilters {
   verdict: "All" | Verdict;
   minRisk: number;
   maxRisk: number;
+  startDate: string;
+  endDate: string;
 }
 
 export interface WatchlistFilters {
@@ -91,4 +93,17 @@ export interface WatchlistFilters {
   category: "All" | WatchlistTarget["category"];
   alertState: "All" | WatchlistTarget["alertState"];
   sortBy: "risk-desc" | "alpha-desc" | "recent";
+}
+
+export interface WorkspaceAdvancedFilters {
+  evidenceWindow: "24h" | "7d" | "30d";
+  minimumConfidence: "0.65" | "0.75" | "0.85";
+  xapiClasses: "Twitter + Web + News + Crypto" | "Web + News + AI" | "Crypto + AI";
+}
+
+export interface WorkspaceRunContext {
+  topic: string;
+  mode: ScanMode;
+  advancedFilters: WorkspaceAdvancedFilters;
+  createdAt: string;
 }
