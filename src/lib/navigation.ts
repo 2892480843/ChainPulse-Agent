@@ -8,6 +8,7 @@ export interface NavigationItem {
 
 export const navigationItems: NavigationItem[] = [
   { key: "workspace", label: "工作台", path: "/workspace" },
+  { key: "demo", label: "评委演示", path: "/demo" },
   { key: "tasks", label: "运行中的任务", path: "/tasks" },
   { key: "reports", label: "报告中心", path: "/reports" },
   { key: "trace", label: "xAPI Trace", path: "/trace" },

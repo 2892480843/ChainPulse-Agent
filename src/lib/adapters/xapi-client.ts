@@ -1,11 +1,25 @@
 import { xapiTraces } from "@/lib/mock-data";
 import type { XApiTrace } from "@/lib/types";
+import type { XApiActionSchema, XApiActionSearchResult, XApiCallResult, XApiHealthStatus, XApiRouteResponse } from "@/lib/xapi-types";
 
 export interface XApiClient {
   searchActions(query: string): Promise<string[]>;
   getActionSchema(action: string): Promise<Record<string, unknown>>;
   callAction(action: string, input: Record<string, unknown>): Promise<XApiTrace>;
   getTrace(taskId: string): Promise<XApiTrace[]>;
+}
+
+export interface XApiRouteClient {
+  healthCheck(): Promise<XApiRouteResponse<XApiHealthStatus>>;
+  searchActions(query: string): Promise<XApiRouteResponse<XApiActionSearchResult[]>>;
+  getActionSchema(action: string): Promise<XApiRouteResponse<XApiActionSchema>>;
+  callAction(action: string, input: Record<string, unknown>, taskId: string): Promise<XApiRouteResponse<XApiCallResult>>;
+}
+
+export interface XApiRuntimeSnapshot {
+  label: "live xAPI" | "mock fallback";
+  reason: "connected" | "no XAPI_KEY" | "upstream failed" | "checking xAPI";
+  response?: XApiRouteResponse<XApiHealthStatus>;
 }
 
 export const mockXApiClient: XApiClient = {
@@ -43,6 +57,58 @@ export const mockXApiClient: XApiClient = {
   }
 };
 
-// Future integration point:
-// Replace mockXApiClient with a server-only implementation that injects XAPI_KEY
-// from environment variables and proxies requests through Next.js route handlers.
+export const routeXApiClient: XApiRouteClient = {
+  async healthCheck() {
+    return fetchJson<XApiHealthStatus>("/api/xapi/health");
+  },
+
+  async searchActions(query) {
+    return fetchJson<XApiActionSearchResult[]>(`/api/xapi/search?query=${encodeURIComponent(query)}`);
+  },
+
+  async getActionSchema(action) {
+    return fetchJson<XApiActionSchema>(`/api/xapi/schema?action=${encodeURIComponent(action)}`);
+  },
+
+  async callAction(action, input, taskId) {
+    return fetchJson<XApiCallResult>("/api/xapi/call", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({ taskId, action, input })
+    });
+  }
+};
+
+export async function getXApiRuntimeSnapshot(): Promise<XApiRuntimeSnapshot> {
+  try {
+    const response = await routeXApiClient.healthCheck();
+    if (response.mode === "live") {
+      return {
+        label: "live xAPI",
+        reason: "connected",
+        response
+      };
+    }
+
+    return {
+      label: "mock fallback",
+      reason: response.mode === "unconfigured" ? "no XAPI_KEY" : "upstream failed",
+      response
+    };
+  } catch {
+    return {
+      label: "mock fallback",
+      reason: "upstream failed"
+    };
+  }
+}
+
+async function fetchJson<T>(url: string, init?: RequestInit): Promise<XApiRouteResponse<T>> {
+  const response = await fetch(url, {
+    ...init,
+    cache: "no-store"
+  });
+  return response.json() as Promise<XApiRouteResponse<T>>;
+}

@@ -56,5 +56,21 @@ export function searchChainPulse(query: string, limit = 6): SearchResult[] {
       path: `/watchlist?target=${target.id}`
     }));
 
-  return [...reportResults, ...taskResults, ...traceResults, ...watchlistResults].slice(0, limit);
+  return [...reportResults, ...taskResults, ...traceResults, ...watchlistResults]
+    .sort((left, right) => resultPriority(left) - resultPriority(right))
+    .slice(0, limit);
+}
+
+function resultPriority(result: SearchResult) {
+  if (result.type === "Report" && result.id === "rep_eth_001") return 0;
+  if (result.type === "Task" && result.id === "task_eth_risk_001") return 1;
+  if (result.type === "Trace") {
+    const trace = xapiTraces.find((item) => item.id === result.id);
+    if (trace?.status === "failed") return 2;
+  }
+  if (result.type === "Report") {
+    const report = reports.find((item) => item.id === result.id);
+    if (report?.status === "已上链") return 3;
+  }
+  return 10;
 }

@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import clsx from "clsx";
-import { Gauge, Loader2, Network, Play, ShieldCheck, SlidersHorizontal } from "lucide-react";
+import { ArrowRight, FileCheck2, Gauge, Loader2, Network, Play, ShieldCheck, SlidersHorizontal } from "lucide-react";
 import { reports } from "@/lib/mock-data";
 import { defaultWorkspaceAdvancedFilters, modeOptions } from "@/lib/navigation";
 import type { ScanMode, WorkspaceAdvancedFilters, WorkspaceRunContext } from "@/lib/types";
@@ -18,6 +19,11 @@ import { TokenIcon } from "@/components/ui/TokenIcon";
 import { buttonClass, cardClass, inputClass, primaryButtonClass } from "@/components/ui/styles";
 
 const storageKey = "chainpulse:last-run";
+const quickCases = [
+  { label: "ETH 风险基线", query: "$ETH", detail: "稳定资产热度 + Trace + Report + Attestation", badge: "$ETH 推荐演示路径" },
+  { label: "ZEC 流动性提醒", query: "$ZEC", detail: "隐私币新闻与社交集中度" },
+  { label: "DAO 投票尽调", query: "Uniswap DAO proposal", detail: "治理提案证据包" }
+];
 
 export function WorkspacePage() {
   const router = useRouter();
@@ -39,8 +45,14 @@ export function WorkspacePage() {
       advancedFilters,
       createdAt: new Date().toLocaleTimeString("zh-CN", { hour12: false })
     };
-    window.sessionStorage.setItem(storageKey, JSON.stringify(context));
-    notify("任务已创建");
+    let persisted = true;
+    try {
+      window.sessionStorage.setItem(storageKey, JSON.stringify(context));
+    } catch {
+      persisted = false;
+    }
+    notify(persisted ? "任务已创建" : "任务已创建，本地运行上下文未保存");
+    window.setTimeout(() => setIsRunning(false), 450);
     router.push("/tasks");
   }
 
@@ -58,6 +70,18 @@ export function WorkspacePage() {
       />
       <div className="grid gap-5 xl:grid-cols-[1.35fr_0.65fr]">
         <div className={clsx(cardClass, "p-4 sm:p-5")}>
+          <div className="mb-4 flex flex-col gap-3 border-b border-slate-200 pb-4 md:flex-row md:items-start md:justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="grid h-8 w-8 place-items-center rounded-lg bg-blue-50 text-blue-700 ring-1 ring-blue-100">
+                  <FileCheck2 aria-hidden className="h-4 w-4" />
+                </span>
+                <h2 className="text-sm font-semibold text-slate-950">任务配置面板</h2>
+              </div>
+              <p className="mt-2 text-sm leading-6 text-slate-600">把路演输入收敛成一个可复核 run context：目标、模式、证据窗口、置信度阈值和 xAPI 能力范围。</p>
+            </div>
+            <span className="w-fit rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-100">mock run context</span>
+          </div>
           <div className="grid gap-4">
             <label className="grid gap-2">
               <span className="text-sm font-medium text-slate-700">分析对象</span>
@@ -87,11 +111,11 @@ export function WorkspacePage() {
                 </button>
               ))}
             </div>
-            <details className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-              <summary className="flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-700">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <div className="flex items-center gap-2 text-sm font-medium text-slate-700">
                 <SlidersHorizontal aria-hidden className="h-4 w-4" />
-                高级筛选
-              </summary>
+                Evidence controls
+              </div>
               <div className="mt-3 grid gap-3 md:grid-cols-3">
                 <label className="grid gap-1 text-xs text-slate-600">
                   Evidence window
@@ -136,9 +160,12 @@ export function WorkspacePage() {
                   </select>
                 </label>
               </div>
-            </details>
-            <div className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-800">
-              当前 mock run：{workspaceInput || "ETH"} / {selectedMode} / {advancedFilters.evidenceWindow} / confidence {advancedFilters.minimumConfidence}
+            </div>
+            <div className="grid gap-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-3 text-xs text-blue-900 md:grid-cols-[1fr_auto] md:items-center">
+              <p>
+                当前 mock run：<span className="font-semibold">{workspaceInput || "ETH"}</span> / {selectedMode} / {advancedFilters.evidenceWindow} / confidence {advancedFilters.minimumConfidence}
+              </p>
+              <span className="mono w-fit rounded-full bg-white px-2 py-1 text-[11px] text-blue-700 ring-1 ring-blue-100">sessionStorage preview</span>
             </div>
             <div className="flex flex-wrap gap-2">
               <button className={primaryButtonClass} type="button" onClick={runAgent} disabled={isRunning}>
@@ -164,7 +191,7 @@ export function WorkspacePage() {
       <div className="grid gap-5 xl:grid-cols-[1fr_360px]">
         <div className={clsx(cardClass, "overflow-hidden")}>
           <SectionHeader title="最近报告" action="mock data" />
-          <div className="thin-scrollbar overflow-x-auto">
+          <div className="thin-scrollbar overflow-x-auto border-t border-slate-200">
             <table className="w-full min-w-[720px] text-left text-sm">
               <thead className="border-y border-slate-200 bg-slate-50 text-xs uppercase text-slate-500">
                 <tr>
@@ -182,7 +209,9 @@ export function WorkspacePage() {
                       <div className="flex items-center gap-3">
                         <TokenIcon symbol={report.topic} />
                         <div>
-                          <p className="font-medium text-slate-900">{report.title}</p>
+                          <Link className="font-medium text-blue-700 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-100" href={`/reports/${report.id}`}>
+                            {report.title}
+                          </Link>
                           <p className="text-xs text-slate-500">{report.createdAt}</p>
                         </div>
                       </div>
@@ -205,16 +234,15 @@ export function WorkspacePage() {
         </div>
 
         <div className={clsx(cardClass, "p-4")}>
-          <h2 className="text-sm font-semibold text-slate-950">快速案例</h2>
+          <h2 className="text-sm font-semibold text-slate-950">演示入口</h2>
           <div className="mt-3 grid gap-2">
-            {[
-              ["ETH 风险基线", "$ETH", "稳定资产热度 + 链上证明"],
-              ["ZEC 流动性提醒", "$ZEC", "隐私币新闻与社交集中度"],
-              ["DAO 投票尽调", "Uniswap DAO proposal", "治理提案证据包"]
-            ].map(([label, query, detail]) => (
-              <button key={label} className="rounded-lg border border-slate-200 p-3 text-left transition-colors hover:border-blue-200 hover:bg-blue-50 active:scale-[0.98]" type="button" onClick={() => fillQuickCase(query)}>
-                <p className="text-sm font-medium text-slate-900">{label}</p>
-                <p className="mt-1 text-xs text-slate-500">{detail}</p>
+            {quickCases.map((item) => (
+              <button key={item.label} className={clsx("rounded-lg border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-100 active:scale-[0.98]", item.query === "$ETH" ? "border-blue-200 bg-blue-50 hover:border-blue-300" : "border-slate-200 hover:border-blue-200 hover:bg-blue-50")} type="button" onClick={() => fillQuickCase(item.query)}>
+                <span className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-medium text-slate-900">{item.label}</span>
+                  {item.badge ? <span className="rounded-full bg-white px-2 py-1 text-[11px] font-semibold text-blue-700 ring-1 ring-blue-100">{item.badge}</span> : <ArrowRight aria-hidden className="h-4 w-4 text-slate-400" />}
+                </span>
+                <p className="mt-1 text-xs text-slate-500">{item.detail}</p>
               </button>
             ))}
           </div>

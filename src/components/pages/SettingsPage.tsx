@@ -15,7 +15,7 @@ export function SettingsPage() {
   const { copiedKey, copyText, notify } = useAppActions();
   const [apiVisible, setApiVisible] = useState(false);
   const [savedAt, setSavedAt] = useState("");
-  const apiKey = "xapi_demo_8f32b9c4e1_mock_only";
+  const apiKey = "XAPI_KEY is server-side only";
 
   function saveSettings() {
     const timestamp = new Date().toLocaleTimeString("zh-CN", { hour12: false });

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import clsx from "clsx";
-import { Database, FileText, Network, Plus, Radio, RefreshCcw, Timer, X } from "lucide-react";
+import { Database, FileText, Network, Plus, Radio, RefreshCcw, ShieldCheck, Timer, X } from "lucide-react";
 import { reports, runningTasks } from "@/lib/mock-data";
 import { timelineSteps } from "@/lib/navigation";
 import type { RunningTask, WorkspaceRunContext } from "@/lib/types";
@@ -18,6 +18,15 @@ import { TokenIcon } from "@/components/ui/TokenIcon";
 import { buttonClass, cardClass, selectedButtonClass } from "@/components/ui/styles";
 
 const storageKey = "chainpulse:last-run";
+const timelineMeaning: Record<string, string> = {
+  "任务解析": "Turns a human target into structured Agent intent.",
+  "xAPI 搜索": "Discovers which external actions can provide evidence.",
+  "读取 Schema": "Locks the tool contract before any call is made.",
+  "数据采集": "Collects multi-source records for comparison.",
+  "证据归一化": "Converts raw outputs into a shared evidence packet.",
+  "推理与打分": "Connects evidence to risk, alpha, and confidence.",
+  "生成报告": "Creates a reviewable decision record for hashing."
+};
 
 export function RunningTasksPage() {
   const { notify } = useAppActions();
@@ -122,6 +131,7 @@ export function RunningTasksPage() {
                     )}
                   />
                   <p className={clsx("mt-2 text-xs font-medium", isActive ? "text-blue-700" : "text-slate-700")}>{step}</p>
+                  <p className="mt-2 text-[11px] leading-4 text-slate-500">{timelineMeaning[step]}</p>
                 </div>
               );
             })}
@@ -167,6 +177,23 @@ export function RunningTasksPage() {
         <div className="space-y-4">
           <StatCard icon={Timer} label="当前耗时" value={currentTask.elapsed} detail="目标小于 6 分钟" tone="blue" />
           <StatCard icon={Database} label="Evidence items" value="18" detail="4 类 xAPI 来源" tone="green" />
+          <div className={clsx(cardClass, "p-4")}>
+            <h2 className="text-sm font-semibold text-slate-950">Next step</h2>
+            <div className="mt-3 grid gap-2">
+              <button className={buttonClass} type="button" onClick={() => router.push(`/trace?task=${currentTask.id}`)}>
+                <Network aria-hidden className="h-4 w-4" />
+                Inspect xAPI Trace
+              </button>
+              <button className={buttonClass} type="button" onClick={openReportDraft}>
+                <FileText aria-hidden className="h-4 w-4" />
+                Open Report Draft
+              </button>
+              <button className={buttonClass} type="button" onClick={() => router.push("/attestation")}>
+                <ShieldCheck aria-hidden className="h-4 w-4" />
+                Prepare Attestation
+              </button>
+            </div>
+          </div>
           {latestRun ? (
             <InfoPanel
               title="当前任务概览"

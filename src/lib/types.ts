@@ -1,4 +1,4 @@
-export type PageKey = "workspace" | "tasks" | "reports" | "trace" | "attestation" | "watchlist" | "settings";
+export type PageKey = "workspace" | "demo" | "tasks" | "reports" | "trace" | "attestation" | "watchlist" | "settings";
 
 export type ScanMode = "Alpha Scan" | "Risk Scan" | "DAO 尽调";
 
@@ -82,6 +82,7 @@ export interface ReportFilters {
   query: string;
   mode: "All" | ScanMode;
   verdict: "All" | Verdict;
+  status: "All" | ReportStatus;
   minRisk: number;
   maxRisk: number;
   startDate: string;

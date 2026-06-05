@@ -9,6 +9,7 @@ import {
   FileText,
   LayoutDashboard,
   Network,
+  Presentation,
   Settings,
   ShieldCheck
 } from "lucide-react";
@@ -17,6 +18,7 @@ import type { PageKey } from "@/lib/types";
 
 const iconMap = {
   workspace: LayoutDashboard,
+  demo: Presentation,
   tasks: Activity,
   reports: FileText,
   trace: Network,
@@ -29,7 +31,7 @@ export function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="w-[280px] shrink-0 border-r border-slate-200 bg-white/95 px-4 py-4">
+    <aside aria-label="主导航侧栏" className="sticky top-0 hidden h-[100dvh] w-[280px] shrink-0 self-start overflow-y-auto border-r border-slate-200 bg-white/95 px-4 py-4 thin-scrollbar lg:block">
       <div className="flex items-center gap-3">
         <LogoMark />
         <div>

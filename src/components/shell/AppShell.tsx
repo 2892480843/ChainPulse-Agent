@@ -67,7 +67,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <a className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-white focus:px-3 focus:py-2 focus:text-sm focus:font-semibold focus:text-blue-700 focus:shadow" href="#main-content">
         跳到主内容
       </a>
-      <div className="grid min-h-[100dvh] grid-cols-[280px_1fr] bg-slate-100 text-slate-950">
+      <div className="min-h-[100dvh] bg-slate-100 text-slate-950 lg:grid lg:grid-cols-[280px_1fr]">
         <Sidebar />
         <div className="flex min-w-0 flex-col">
           <Header />

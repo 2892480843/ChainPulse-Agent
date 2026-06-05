@@ -9,6 +9,7 @@ export function filterReports(items: Report[], filters: ReportFilters): Report[]
       includesText(`${report.title} ${report.topic} ${report.summary}`, filters.query);
     const modeMatch = filters.mode === "All" || report.mode === filters.mode;
     const verdictMatch = filters.verdict === "All" || report.verdict === filters.verdict;
+    const statusMatch = filters.status === "All" || report.status === filters.status;
     const minRisk = clampRisk(filters.minRisk);
     const maxRisk = clampRisk(filters.maxRisk);
     const riskMatch = report.riskScore >= Math.min(minRisk, maxRisk) && report.riskScore <= Math.max(minRisk, maxRisk);
@@ -16,7 +17,7 @@ export function filterReports(items: Report[], filters: ReportFilters): Report[]
     const startMatch = filters.startDate.length === 0 || reportDate >= filters.startDate;
     const endMatch = filters.endDate.length === 0 || reportDate <= filters.endDate;
 
-    return queryMatch && modeMatch && verdictMatch && riskMatch && startMatch && endMatch;
+    return queryMatch && modeMatch && verdictMatch && statusMatch && riskMatch && startMatch && endMatch;
   });
 }
 

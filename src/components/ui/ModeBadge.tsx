@@ -9,5 +9,5 @@ export function ModeBadge({ mode }: { mode: ScanMode }) {
         ? "bg-orange-50 text-orange-700 ring-orange-100"
         : "bg-blue-50 text-blue-700 ring-blue-100";
 
-  return <span className={clsx("rounded-full px-2.5 py-1 text-xs font-medium ring-1", cls)}>{mode}</span>;
+  return <span className={clsx("inline-flex items-center justify-center whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium leading-none ring-1", cls)}>{mode}</span>;
 }
