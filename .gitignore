@@ -25,3 +25,12 @@ pnpm-debug.log*
 # TypeScript
 *.tsbuildinfo
 next-env.d.ts
+
+# generated image artifacts
+artifacts/*.png
+artifacts/*.jpg
+artifacts/*.jpeg
+artifacts/*.gif
+artifacts/*.webp
+artifacts/*.svg
+artifacts/*.ico
