@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Bell, Check, Code2, Eye, EyeOff, KeyRound, LogOut, Shield, ShieldCheck, User, Wallet } from "lucide-react";
+import { readBrowserAttestationConfig, readAttestationConfig } from "@/lib/adapters/attestation-client";
 import { useAppActions } from "@/components/shell/AppShell";
 import { Field, SelectField } from "@/components/ui/FormFields";
 import { InfoPanel } from "@/components/ui/InfoPanel";
@@ -15,7 +16,20 @@ export function SettingsPage() {
   const { copiedKey, copyText, notify } = useAppActions();
   const [apiVisible, setApiVisible] = useState(false);
   const [savedAt, setSavedAt] = useState("");
+  const [chainConfig, setChainConfig] = useState(() => readAttestationConfig());
   const apiKey = "XAPI_KEY is server-side only";
+  const contractValue = chainConfig.contractAddress ?? "未配置";
+  const explorerValue = chainConfig.explorerBaseUrl ?? "未配置";
+
+  useEffect(() => {
+    let cancelled = false;
+    window.setTimeout(() => {
+      if (!cancelled) setChainConfig(readBrowserAttestationConfig());
+    }, 0);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function saveSettings() {
     const timestamp = new Date().toLocaleTimeString("zh-CN", { hour12: false });
@@ -25,7 +39,7 @@ export function SettingsPage() {
 
   return (
     <section className="space-y-5">
-      <PageHeading eyebrow="Configuration" title="设置" description="编辑账户、API、模型、链上网络、通知和安全配置。当前为本地 mock，不暴露真实 XAPI_KEY。" />
+      <PageHeading eyebrow="Configuration" title="设置" description="编辑账户、API、模型、链上网络、通知和安全配置。XAPI_KEY 只在服务端读取，链上地址来自 public env。" />
       <div className="grid gap-5 xl:grid-cols-[1fr_340px]">
         <div className="grid gap-5">
           <SettingsCard title="账户信息" icon={User}>
@@ -72,8 +86,10 @@ export function SettingsPage() {
           </SettingsCard>
           <SettingsCard title="链上网络配置" icon={Wallet}>
             <div className="grid gap-3 md:grid-cols-2">
-              <SelectField label="Network" name="network" options={["Sepolia", "Base Sepolia", "Local Anvil"]} />
-              <Field label="Attestation contract" name="attestation-contract" defaultValue="0xA11e5t…C0de" />
+              <Field label="Network" name="network" defaultValue={chainConfig.chainId ? `Sepolia ${chainConfig.chainId}` : "Sepolia 11155111"} />
+              <Field label="Attestation contract" name="attestation-contract" defaultValue={contractValue} />
+              <Field label="Explorer" name="explorer-base-url" defaultValue={explorerValue} />
+              <Field label="Wallet mode" name="wallet-mode" defaultValue={chainConfig.walletMode} />
             </div>
           </SettingsCard>
           <SettingsCard title="通知设置" icon={Bell}>
@@ -100,8 +116,16 @@ export function SettingsPage() {
         </div>
 
         <aside className="space-y-4">
-          <StatCard icon={ShieldCheck} label="当前环境" value="Demo" detail="mock / fallback" tone="blue" />
-          <InfoPanel title="环境概览" rows={[["xAPI", "server-side mock"], ["Wallet", "not connected"], ["Contract", "placeholder adapter"], ["Storage", "local state"]]} />
+          <StatCard icon={ShieldCheck} label="当前环境" value={chainConfig.contractConfigured ? "Sepolia" : "Demo"} detail={chainConfig.contractConfigured ? "live contract configured" : "mock / fallback"} tone="blue" />
+          <InfoPanel
+            title="环境概览"
+            rows={[
+              ["xAPI", "server-side route"],
+              ["Wallet", chainConfig.walletMode],
+              ["Contract", chainConfig.contractConfigured ? contractValue : "not configured"],
+              ["Explorer", chainConfig.explorerConfigured ? explorerValue : "not configured"]
+            ]}
+          />
         </aside>
       </div>
     </section>

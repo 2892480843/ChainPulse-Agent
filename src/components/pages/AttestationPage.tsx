@@ -8,10 +8,12 @@ import {
   chainAttestationClient,
   getAttestationReadiness,
   mockAttestationClient,
+  prepareChainAttestation,
   readBrowserAttestationConfig,
   readAttestationConfig,
   verifyProofBundle,
   type AttestationRecord,
+  type PreparedChainAttestation,
   type ProofVerificationResult
 } from "@/lib/adapters/attestation-client";
 import { attestation, reports } from "@/lib/mock-data";
@@ -59,9 +61,10 @@ export function AttestationPage() {
   const [historyFilters, setHistoryFilterState] = useState(defaultProofHistoryFilters);
   const [datePreset, setDatePreset] = useState<ProofHistoryDatePreset>("all");
   const [config, setConfig] = useState(() => readAttestationConfig());
+  const [preparedAttestation, setPreparedAttestation] = useState<PreparedChainAttestation | null>(null);
   const readiness = useMemo(() => getAttestationReadiness(config), [config]);
   const filteredProofReports = useMemo(() => filterProofHistory(reports, historyFilters), [historyFilters]);
-  const steps = ["生成报告", "生成哈希", readiness.canWrite ? "钱包可签名" : "等待钱包/合约", readiness.canWrite ? "可提交交易" : "真实交易禁用", record.txHash.startsWith("0x") ? "凭证可复核" : "等待确认"];
+  const steps = ["生成报告", "生成哈希", "SignalAttestation ABI", readiness.canWrite ? "钱包可签名" : "等待钱包/合约", readiness.canWrite ? "可提交交易" : "真实交易禁用", record.txHash.startsWith("0x") ? "凭证可复核" : "等待确认"];
 
   useEffect(() => {
     let cancelled = false;
@@ -82,12 +85,26 @@ export function AttestationPage() {
     };
   }, [notify]);
 
+  useEffect(() => {
+    let cancelled = false;
+    prepareChainAttestation(reports[0], reports[0].evidence, config)
+      .then((result) => {
+        if (!cancelled) setPreparedAttestation(result);
+      })
+      .catch(() => {
+        if (!cancelled) setPreparedAttestation(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [config]);
+
   function openExplorer() {
     if (!config.explorerBaseUrl) {
       notify("Explorer 未配置");
       return;
     }
-    window.open(`${config.explorerBaseUrl}/tx/${record.txHash}`, "_blank", "noopener,noreferrer");
+    window.open(record.explorerTxUrl ?? `${config.explorerBaseUrl}/tx/${record.txHash}`, "_blank", "noopener,noreferrer");
     notify("已打开 explorer 链接");
   }
 
@@ -187,12 +204,14 @@ export function AttestationPage() {
             <ReceiptFact icon={Wallet} label="Wallet" value={record.walletAddress} />
           </div>
 
-          <div className="mt-4 grid gap-3 md:grid-cols-5">
+          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-7">
             <LocalVerifyFact label="Report Hash match" passed={Boolean(localVerification?.reportHashMatch)} value={localVerification ? (localVerification.reportHashMatch ? "match" : "mismatch") : "checking"} />
             <LocalVerifyFact label="Evidence Hash match" passed={Boolean(localVerification?.evidenceHashMatch)} value={localVerification ? (localVerification.evidenceHashMatch ? "match" : "mismatch") : "checking"} />
             <LocalVerifyFact label="Explorer configured" passed={config.explorerConfigured} value={config.explorerConfigured ? "configured" : "missing"} />
             <LocalVerifyFact label="Contract configured" passed={config.contractConfigured} value={config.contractConfigured ? "configured" : "missing"} />
             <LocalVerifyFact label="Wallet mode" passed={config.walletMode === "browser wallet detected"} value={config.walletMode} />
+            <LocalVerifyFact label="ABI" passed value="SignalAttestation" />
+            <LocalVerifyFact label="Calldata" passed={Boolean(preparedAttestation)} value={preparedAttestation ? shortValue(preparedAttestation.data) : "waiting"} />
           </div>
 
           {!readiness.canWrite ? (
@@ -216,6 +235,22 @@ export function AttestationPage() {
                 </div>
               </div>
             ))}
+          </div>
+
+          <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-950">Sepolia contract payload</h3>
+                <p className="mt-1 text-xs leading-5 text-slate-500">完整 ABI 写入 report/evidence hash、topic、riskScore、alphaScore、verdict 和 metadataURI。</p>
+              </div>
+              <span className="w-fit rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 ring-1 ring-slate-200">attest(bytes32,bytes32,string,uint8,uint8,string,string)</span>
+            </div>
+            <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+              <PayloadFact label="Contract" value={preparedAttestation?.to ?? config.contractAddress ?? "missing"} />
+              <PayloadFact label="Chain" value={preparedAttestation?.chainId ? `Sepolia ${preparedAttestation.chainId}` : "Sepolia 11155111"} />
+              <PayloadFact label="Metadata URI" value={preparedAttestation?.metadataURI ?? "waiting"} />
+              <PayloadFact label="Calldata" value={preparedAttestation?.data ? shortValue(preparedAttestation.data) : "waiting"} />
+            </div>
           </div>
         </div>
 
@@ -243,11 +278,22 @@ export function AttestationPage() {
                   evidenceHash: record.evidenceHash,
                   txHash: record.txHash,
                   localVerification,
+                  preparedAttestation: preparedAttestation
+                    ? {
+                        to: preparedAttestation.to,
+                        chainId: preparedAttestation.chainId,
+                        metadataURI: preparedAttestation.metadataURI,
+                        functionSignature: preparedAttestation.functionSignature,
+                        calldata: preparedAttestation.data,
+                        explorerAddressUrl: preparedAttestation.explorerAddressUrl
+                      }
+                    : null,
                   chainConfig: {
                     chainId: config.chainId,
                     contractAddress: config.contractAddress,
                     explorerBaseUrl: config.explorerBaseUrl,
-                    readiness: readiness.state
+                    readiness: readiness.state,
+                    sourceVerification: "run npm run sepolia:verify with ETHERSCAN_API_KEY"
                   }
                 })
               }
@@ -406,6 +452,17 @@ function ReceiptFact({ icon: Icon, label, value }: { icon: LucideIcon; label: st
         {label}
       </div>
       <p className="mono mt-2 min-w-0 truncate text-sm text-slate-900" spellCheck={false}>
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function PayloadFact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0 rounded-lg border border-slate-200 bg-white px-3 py-2">
+      <p className="text-[11px] font-semibold uppercase text-slate-500">{label}</p>
+      <p className="mono mt-1 truncate text-xs text-slate-800" spellCheck={false}>
         {value}
       </p>
     </div>

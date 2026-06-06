@@ -9,6 +9,12 @@ export interface AttestationRecord {
   walletAddress: string;
   block: string;
   timestamp: string;
+  chainId?: number;
+  contractAddress?: Address;
+  reportId?: string;
+  metadataURI?: string;
+  explorerTxUrl?: string;
+  explorerAddressUrl?: string;
 }
 
 export interface AttestationClient {
@@ -56,22 +62,58 @@ export interface PreparedChainAttestation {
   data: `0x${string}`;
   reportHash: string;
   evidenceHash: string;
+  metadataURI: string;
+  functionSignature: string;
   explorerAddressUrl?: string;
 }
 
 type AttestationEnv = Record<string, string | undefined>;
 
-const attestationAbi = [
+export const signalAttestationAbi = [
   {
     type: "function",
-    name: "attestReport",
+    name: "attest",
     stateMutability: "nonpayable",
     inputs: [
-      { name: "reportId", type: "string" },
       { name: "reportHash", type: "bytes32" },
-      { name: "evidenceHash", type: "bytes32" }
+      { name: "evidenceHash", type: "bytes32" },
+      { name: "topic", type: "string" },
+      { name: "riskScore", type: "uint8" },
+      { name: "alphaScore", type: "uint8" },
+      { name: "verdict", type: "string" },
+      { name: "metadataURI", type: "string" }
     ],
-    outputs: []
+    outputs: [{ name: "reportId", type: "uint256" }]
+  },
+  {
+    type: "function",
+    name: "reportCount",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }]
+  },
+  {
+    type: "function",
+    name: "getReport",
+    stateMutability: "view",
+    inputs: [{ name: "reportId", type: "uint256" }],
+    outputs: [
+      {
+        name: "",
+        type: "tuple",
+        components: [
+          { name: "reportHash", type: "bytes32" },
+          { name: "evidenceHash", type: "bytes32" },
+          { name: "topic", type: "string" },
+          { name: "riskScore", type: "uint8" },
+          { name: "alphaScore", type: "uint8" },
+          { name: "verdict", type: "string" },
+          { name: "metadataURI", type: "string" },
+          { name: "creator", type: "address" },
+          { name: "createdAt", type: "uint256" }
+        ]
+      }
+    ]
   }
 ] as const;
 
@@ -90,7 +132,8 @@ export const mockAttestationClient: AttestationClient = {
       ...attestation,
       reportHash: await createReportHash(report),
       evidenceHash: await createEvidenceHash(report.evidence),
-      walletAddress
+      walletAddress,
+      metadataURI: createReportMetadataURI(report)
     };
   },
 
@@ -99,7 +142,8 @@ export const mockAttestationClient: AttestationClient = {
     return {
       ...attestation,
       reportHash: await createReportHash(report),
-      evidenceHash: await createEvidenceHash(report.evidence)
+      evidenceHash: await createEvidenceHash(report.evidence),
+      metadataURI: createReportMetadataURI(report)
     };
   }
 };
@@ -115,7 +159,8 @@ export const chainAttestationClient: AttestationClient = {
 
   async attestReport(reportId, walletAddress) {
     const report = findReport(reportId);
-    const prepared = await prepareChainAttestation(report, report.evidence);
+    const config = readAttestationConfig();
+    const prepared = await prepareChainAttestation(report, report.evidence, config);
     const ethereum = getBrowserEthereum();
 
     if (!ethereum) {
@@ -140,7 +185,12 @@ export const chainAttestationClient: AttestationClient = {
       txHash,
       walletAddress,
       block: "pending",
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      chainId: prepared.chainId,
+      contractAddress: prepared.to,
+      metadataURI: prepared.metadataURI,
+      explorerTxUrl: config.explorerBaseUrl ? `${config.explorerBaseUrl}/tx/${txHash}` : undefined,
+      explorerAddressUrl: prepared.explorerAddressUrl
     };
   },
 
@@ -158,7 +208,11 @@ export const chainAttestationClient: AttestationClient = {
       txHash: "not submitted",
       walletAddress: "wallet required",
       block: "not queried",
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      chainId: config.chainId,
+      contractAddress: config.contractAddress,
+      metadataURI: createReportMetadataURI(report),
+      explorerAddressUrl: config.explorerBaseUrl ? `${config.explorerBaseUrl}/address/${config.contractAddress}` : undefined
     };
   }
 };
@@ -245,16 +299,27 @@ export async function prepareChainAttestation(report: Report, evidence: Evidence
   }
 
   const [reportHash, evidenceHash] = await Promise.all([createReportHash(report), createEvidenceHash(evidence)]);
+  const metadataURI = createReportMetadataURI(report);
 
   return {
     to: config.contractAddress,
     chainId: config.chainId,
     reportHash,
     evidenceHash,
+    metadataURI,
+    functionSignature: "attest(bytes32,bytes32,string,uint8,uint8,string,string)",
     data: encodeFunctionData({
-      abi: attestationAbi,
-      functionName: "attestReport",
-      args: [report.id, reportHash as `0x${string}`, evidenceHash as `0x${string}`]
+      abi: signalAttestationAbi,
+      functionName: "attest",
+      args: [
+        reportHash as `0x${string}`,
+        evidenceHash as `0x${string}`,
+        report.topic,
+        report.riskScore,
+        report.alphaScore,
+        report.verdict,
+        metadataURI
+      ]
     }),
     explorerAddressUrl: config.explorerBaseUrl ? `${config.explorerBaseUrl}/address/${config.contractAddress}` : undefined
   };
@@ -287,6 +352,10 @@ function findReport(reportId: string) {
     throw new Error(`report not found: ${reportId}`);
   }
   return report;
+}
+
+export function createReportMetadataURI(report: Report) {
+  return `chainpulse://reports/${report.id}`;
 }
 
 function getBrowserEthereum(): BrowserEthereum | null {

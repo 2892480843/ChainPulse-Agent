@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
+import { decodeFunctionData } from "viem";
 import {
   createDeterministicHash,
   createEvidenceHash,
   createReportHash,
+  createReportMetadataURI,
   getAttestationReadiness,
   mockAttestationClient,
+  prepareChainAttestation,
   readAttestationConfig,
   selectAttestationClient,
+  signalAttestationAbi,
   verifyProofBundle
 } from "@/lib/adapters/attestation-client";
 import { attestation, reports } from "@/lib/mock-data";
@@ -53,5 +57,33 @@ describe("attestation adapter and proof hashing", () => {
       reportHash: reports[0].reportHash,
       evidenceHash: reports[0].evidenceHash
     });
+  });
+
+  it("encodes the full SignalAttestation calldata for Sepolia writes", async () => {
+    const prepared = await prepareChainAttestation(reports[0], reports[0].evidence, {
+      chainId: 11155111,
+      contractAddress: "0x0000000000000000000000000000000000000001",
+      explorerBaseUrl: "https://sepolia.etherscan.io",
+      contractConfigured: true,
+      explorerConfigured: true,
+      walletMode: "browser wallet missing"
+    });
+    const decoded = decodeFunctionData({
+      abi: signalAttestationAbi,
+      data: prepared.data
+    });
+
+    expect(decoded.functionName).toBe("attest");
+    expect(decoded.args).toEqual([
+      reports[0].reportHash,
+      reports[0].evidenceHash,
+      reports[0].topic,
+      reports[0].riskScore,
+      reports[0].alphaScore,
+      reports[0].verdict,
+      createReportMetadataURI(reports[0])
+    ]);
+    expect(prepared.functionSignature).toBe("attest(bytes32,bytes32,string,uint8,uint8,string,string)");
+    expect(prepared.explorerAddressUrl).toBe("https://sepolia.etherscan.io/address/0x0000000000000000000000000000000000000001");
   });
 });
