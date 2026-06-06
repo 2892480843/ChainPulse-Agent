@@ -68,10 +68,10 @@ export function WatchlistPage() {
   function scanTarget(item: WatchlistTarget) {
     const timestamp = new Date().toLocaleTimeString("zh-CN", { hour12: false });
     setOverviewFeedback(`${timestamp} 已扫描 ${item.name}`);
-    setRecentAlert(`${item.name} mock 扫描完成，风险分 ${item.riskScore}`);
+    setRecentAlert(`${item.name} scan completed, risk score ${item.riskScore}`);
     setHighlightState({ sourceTargetQuery: targetQuery, highlightedId: item.id });
     router.push(`/watchlist?target=${item.id}`);
-    notify("已触发一次 mock 扫描");
+    notify("Watchlist scan triggered");
   }
 
   return (
@@ -120,7 +120,7 @@ export function WatchlistPage() {
                 className={buttonClass}
                 type="button"
                 onClick={() => {
-                  setRecentAlert("告警设置 mock 面板已打开");
+                  setRecentAlert("Alert policy panel opened");
                   notify("告警设置已打开");
                 }}
               >

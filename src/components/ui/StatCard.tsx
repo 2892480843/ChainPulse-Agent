@@ -16,9 +16,9 @@ export function StatCard({
   tone: "blue" | "green" | "orange";
 }) {
   const color = {
-    blue: "bg-blue-50 text-blue-700",
-    green: "bg-emerald-50 text-emerald-700",
-    orange: "bg-orange-50 text-orange-700"
+    blue: "bg-blue-50 text-blue-700 ring-blue-100",
+    green: "bg-emerald-50 text-emerald-700 ring-emerald-100",
+    orange: "bg-amber-50 text-amber-700 ring-amber-100"
   }[tone];
 
   return (
@@ -29,7 +29,7 @@ export function StatCard({
           <p className="mt-2 text-2xl font-semibold text-slate-950">{value}</p>
           <p className="mt-1 text-xs text-slate-500">{detail}</p>
         </div>
-        <span className={clsx("grid h-10 w-10 place-items-center rounded-lg", color)}>
+        <span className={clsx("grid h-10 w-10 place-items-center rounded-lg ring-1", color)}>
           <Icon aria-hidden className="h-5 w-5" />
         </span>
       </div>

@@ -7,20 +7,20 @@ export interface NavigationItem {
 }
 
 export const navigationItems: NavigationItem[] = [
-  { key: "workspace", label: "工作台", path: "/workspace" },
-  { key: "demo", label: "评委演示", path: "/demo" },
-  { key: "tasks", label: "运行中的任务", path: "/tasks" },
-  { key: "reports", label: "报告中心", path: "/reports" },
-  { key: "trace", label: "xAPI Trace", path: "/trace" },
-  { key: "attestation", label: "链上证明", path: "/attestation" },
+  { key: "workspace", label: "Workspace", path: "/workspace" },
+  { key: "demo", label: "Review Console", path: "/demo" },
+  { key: "tasks", label: "Agent Runs", path: "/tasks" },
+  { key: "reports", label: "Reports", path: "/reports" },
+  { key: "trace", label: "Audit Trace", path: "/trace" },
+  { key: "attestation", label: "Proofs", path: "/attestation" },
   { key: "watchlist", label: "Watchlist", path: "/watchlist" },
-  { key: "settings", label: "设置", path: "/settings" }
+  { key: "settings", label: "Settings", path: "/settings" }
 ];
 
 export const modeOptions: Array<{ mode: ScanMode; title: string; description: string }> = [
-  { mode: "Alpha Scan", title: "Alpha Scan", description: "追踪新闻、社交和价格侧的机会信号。" },
-  { mode: "Risk Scan", title: "Risk Scan", description: "识别操纵传播、异常波动和证据冲突。" },
-  { mode: "DAO 尽调", title: "DAO 尽调", description: "为治理提案生成可复查的投票前报告。" }
+  { mode: "Alpha Scan", title: "Alpha Scan", description: "Track opportunity signals from news, social data, and market movement." },
+  { mode: "Risk Scan", title: "Risk Scan", description: "Identify manipulation risk, abnormal volatility, and conflicting evidence." },
+  { mode: "DAO 尽调", title: "DAO Review", description: "Generate a reviewable pre-vote report for governance proposals." }
 ];
 
 export const timelineSteps = ["任务解析", "xAPI 搜索", "读取 Schema", "数据采集", "证据归一化", "推理与打分", "生成报告"];

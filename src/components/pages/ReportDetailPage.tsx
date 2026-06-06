@@ -61,13 +61,13 @@ export function ReportDetailPage({ reportId }: { reportId: string }) {
   if (!report) {
     return (
       <section className="space-y-5">
-        <PageHeading eyebrow="Report detail" title="报告详情" description="当前路由没有匹配到本地 mock 报告。" />
+        <PageHeading eyebrow="Report detail" title="Report not found" description="This route does not match a persisted or fallback report record." />
         <div className={cardClass}>
-          <EmptyState title="未找到报告" detail="请返回报告中心，从列表进入可用的 mock 报告详情。" />
+          <EmptyState title="No report record found" detail="Return to Reports and open an available Agent report from the list." />
         </div>
         <Link className={buttonClass} href="/reports">
           <ArrowLeft aria-hidden className="h-4 w-4" />
-          返回报告中心
+          Back to Reports
         </Link>
       </section>
     );
@@ -86,7 +86,7 @@ export function ReportDetailPage({ reportId }: { reportId: string }) {
         <PageHeading eyebrow="Report detail" title={report.title} description={report.summary} />
         <Link className={buttonClass} href="/reports">
           <ArrowLeft aria-hidden className="h-4 w-4" />
-          返回报告中心
+          Back to Reports
         </Link>
       </div>
 
@@ -99,7 +99,7 @@ export function ReportDetailPage({ reportId }: { reportId: string }) {
                   <div className="flex flex-wrap items-center gap-3">
                     <TokenIcon symbol={report.topic} />
                     <div>
-                      <h2 className="text-sm font-semibold text-slate-950">可审计报告摘要</h2>
+                      <h2 className="text-sm font-semibold text-slate-950">Auditable report summary</h2>
                       <p className="mt-1 text-xs text-slate-500">
                         {report.topic} / {report.createdAt}
                       </p>
@@ -146,7 +146,7 @@ export function ReportDetailPage({ reportId }: { reportId: string }) {
 
           <div className={clsx(cardClass, "p-4 sm:p-5")}>
             <h2 className="text-sm font-semibold text-slate-950">Verify evidence chain</h2>
-            <p className="mt-2 text-sm leading-6 text-slate-600">把报告、证据和 xAPI Trace 三段串起来复核：证据能回到 Trace，Trace 保留 input/output hash，报告与证据哈希可本地复算。</p>
+            <p className="mt-2 text-sm leading-6 text-slate-600">Review the report, evidence, and tool traces together: evidence links back to Trace, Trace keeps input/output hashes, and report/evidence hashes can be recomputed locally.</p>
             <div className="mt-3 grid gap-3 md:grid-cols-3">
               <VerifyStatus label="Evidence links to Trace" value={`${linkedEvidenceCount}/${report.evidence.length}`} passed={linkedEvidenceCount === report.evidence.length} />
               <VerifyStatus label="Input/output hash present" value={traceHashesPresent ? "present" : "missing"} passed={traceHashesPresent} />
@@ -248,7 +248,7 @@ export function ReportDetailPage({ reportId }: { reportId: string }) {
             </div>
             <div className="mt-3 space-y-3">
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <p className="text-xs font-medium text-slate-500">链上状态</p>
+                <p className="text-xs font-medium text-slate-500">Proof status</p>
                 <p className="mt-2 text-sm font-semibold text-slate-950">{isAttested ? (attestationConfig.contractConfigured ? "Confirmed on configured chain" : "Mock fallback receipt, contract not configured") : "Draft, ready for attestation"}</p>
               </div>
               <HashRow label="Report Hash" value={report.reportHash} onCopy={copyText} copiedKey={copiedKey} />
@@ -264,7 +264,7 @@ export function ReportDetailPage({ reportId }: { reportId: string }) {
               {report.ai ? <HashRow label="AI Output Hash" value={report.ai.outputHash} onCopy={copyText} copiedKey={copiedKey} /> : null}
               {isAttested ? <HashRow label="Tx Hash" value={attestation.txHash} onCopy={copyText} copiedKey={copiedKey} /> : null}
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <p className="text-xs font-medium text-slate-500">证据链接状态</p>
+                <p className="text-xs font-medium text-slate-500">Evidence link state</p>
                 <p className="mt-2 text-sm font-semibold text-slate-950">
                   {linkedEvidenceCount}/{report.evidence.length} evidence cards linked to Trace
                 </p>

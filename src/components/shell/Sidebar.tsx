@@ -31,12 +31,12 @@ export function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside aria-label="主导航侧栏" className="sticky top-0 hidden h-[100dvh] w-[280px] shrink-0 self-start overflow-y-auto border-r border-slate-200 bg-white/95 px-4 py-4 thin-scrollbar lg:block">
+    <aside aria-label="Primary navigation" className="sticky top-0 hidden h-[100dvh] w-[280px] shrink-0 self-start overflow-y-auto border-r border-slate-200 bg-white/95 px-4 py-4 thin-scrollbar lg:block">
       <div className="flex items-center gap-3">
         <LogoMark />
         <div>
           <p className="text-sm font-semibold text-slate-950">ChainPulse Agent</p>
-          <p className="text-xs text-slate-500">xAPI intelligence console</p>
+          <p className="text-xs text-slate-500">AI risk operations</p>
         </div>
       </div>
 
@@ -50,7 +50,7 @@ export function Sidebar() {
               href={item.path}
               aria-current={active ? "page" : undefined}
               className={clsx(
-                "inline-flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-100 active:scale-[0.98]",
+                "inline-flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors duration-200 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-100",
                 active ? "bg-blue-50 text-blue-700 ring-1 ring-blue-100" : "text-slate-600 hover:bg-slate-50 hover:text-slate-950"
               )}
             >
@@ -62,14 +62,14 @@ export function Sidebar() {
       </nav>
 
       <div className="mt-5 grid gap-3">
-        <QuotaCard label="xAPI quota" value="72%" detail="14,280 / 20,000 calls" tone="blue" />
-        <QuotaCard label="Agent runs" value="18/25" detail="7 runs available today" tone="green" />
+        <QuotaCard label="Evidence quota" value="72%" detail="14,280 / 20,000 calls" tone="blue" />
+        <QuotaCard label="Agent capacity" value="18/25" detail="7 runs available today" tone="green" />
       </div>
 
       <div className="mt-5 space-y-1 border-t border-slate-200 pt-4 text-xs text-slate-500">
-        <p>Demo workspace</p>
-        <p>xAPI mock adapter online</p>
-        <p>No real wallet connected</p>
+        <p>OpenAI-compatible reasoning</p>
+        <p>xAPI evidence tools</p>
+        <p>Sepolia attestation enabled</p>
       </div>
     </aside>
   );
@@ -79,7 +79,7 @@ function QuotaCard({ label, value, detail, tone }: { label: string; value: strin
   const progress = value.includes("%") ? Number(value.replace("%", "")) : 72;
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+    <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-3">
       <div className="flex items-center justify-between">
         <p className="text-xs font-medium text-slate-600">{label}</p>
         <p className={clsx("text-xs font-semibold", tone === "blue" ? "text-blue-700" : "text-emerald-700")}>{value}</p>
@@ -94,7 +94,7 @@ function QuotaCard({ label, value, detail, tone }: { label: string; value: strin
 
 function LogoMark() {
   return (
-    <span className="grid h-10 w-10 place-items-center rounded-lg border border-blue-100 bg-blue-50">
+    <span className="grid h-10 w-10 place-items-center rounded-lg border border-blue-100 bg-blue-50 shadow-[0_8px_20px_rgba(37,99,235,0.12)]">
       <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden>
         <path d="M3 12h3l2-6 4 12 3-9 2 3h4" fill="none" stroke="#2563eb" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
         <circle cx="19" cy="12" r="2" fill="#10b981" />

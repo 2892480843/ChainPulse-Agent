@@ -30,15 +30,15 @@ import { ProofChain } from "@/components/ui/ProofChain";
 import { buttonClass, cardClass, inputClass, primaryButtonClass, selectedButtonClass } from "@/components/ui/styles";
 
 const proofHistoryDatePresets = [
-  { key: "all", label: "全部" },
-  { key: "today", label: "今天" },
-  { key: "7d", label: "近 7 天" },
-  { key: "30d", label: "近 30 天" },
-  { key: "custom", label: "自定义" }
+  { key: "all", label: "All" },
+  { key: "today", label: "Today" },
+  { key: "7d", label: "Last 7 days" },
+  { key: "30d", label: "Last 30 days" },
+  { key: "custom", label: "Custom" }
 ] as const;
 
 type ProofHistoryDatePreset = (typeof proofHistoryDatePresets)[number]["key"];
-type ProofStatusFilter = "All" | "已上链" | "待证明";
+type ProofStatusFilter = "All" | "Attested" | "Pending";
 
 interface ProofHistoryFilters {
   query: string;
@@ -73,12 +73,12 @@ export function AttestationPage() {
   const filteredProofReports = useMemo(() => filterProofHistory(reportItems, historyFilters), [historyFilters, reportItems]);
   const chainVerified = record.onChainVerification?.status === "confirmed";
   const steps = [
-    "生成报告",
-    "生成哈希",
+    "Report generated",
+    "Hashes generated",
     "SignalAttestation ABI",
-    readiness.canWrite ? "钱包可签名" : "等待钱包/合约",
-    readiness.canWrite ? "可提交交易" : "真实交易禁用",
-    chainVerified ? "链上回读已验证" : record.txHash.startsWith("0x") ? "等待链上回读" : "等待确认"
+    readiness.canWrite ? "Wallet can sign" : "Waiting for wallet/contract",
+    readiness.canWrite ? "Transaction ready" : "Real write disabled",
+    chainVerified ? "On-chain readback verified" : record.txHash.startsWith("0x") ? "Waiting for readback" : "Waiting for confirmation"
   ];
 
   useEffect(() => {
@@ -101,7 +101,7 @@ export function AttestationPage() {
       .then((result) => {
         if (!cancelled) setRecord(result);
       })
-      .catch(() => notify("attestation mock adapter 读取失败"));
+      .catch(() => notify("Fallback receipt adapter failed"));
     verifyProofBundle(selectedReport, selectedReport.evidence, recordFromReport(selectedReport) ?? selectedReport).then((result) => {
       if (!cancelled) setLocalVerification(result);
     });
@@ -129,17 +129,17 @@ export function AttestationPage() {
 
   function openExplorer() {
     if (!config.explorerBaseUrl) {
-      notify("Explorer 未配置");
+      notify("Explorer is not configured");
       return;
     }
     window.open(record.explorerTxUrl ?? `${config.explorerBaseUrl}/tx/${record.txHash}`, "_blank", "noopener,noreferrer");
-    notify("已打开 explorer 链接");
+    notify("Explorer link opened");
   }
 
   async function attestOnChain() {
     const ethereum = (window as Window & { ethereum?: { request(args: { method: string; params?: unknown[] }): Promise<unknown> } }).ethereum;
     if (!ethereum) {
-      notify("浏览器钱包不可用");
+      notify("Browser wallet is not available");
       return;
     }
 
@@ -147,7 +147,7 @@ export function AttestationPage() {
       const accounts = (await ethereum.request({ method: "eth_requestAccounts" })) as string[];
       const walletAddress = accounts[0];
       if (!walletAddress) {
-        notify("钱包未返回地址");
+        notify("Wallet did not return an address");
         return;
       }
       const nextRecord = await attestReportOnChain(selectedReport, walletAddress);
@@ -156,9 +156,9 @@ export function AttestationPage() {
       if (savedReport) {
         setReportItems((currentItems) => currentItems.map((report) => (report.id === savedReport.id ? savedReport : report)));
       }
-      notify(nextRecord.onChainVerification?.status === "confirmed" ? "链上写入与回读验证通过" : "真实链上交易已提交，回读验证未完全匹配");
+      notify(nextRecord.onChainVerification?.status === "confirmed" ? "On-chain write and readback verified" : "Transaction submitted, readback verification is not fully matched");
     } catch (error) {
-      notify(error instanceof Error ? error.message : "真实链上交易提交失败");
+      notify(error instanceof Error ? error.message : "Real on-chain transaction failed");
     }
   }
 
@@ -186,11 +186,11 @@ export function AttestationPage() {
 
   return (
     <section className="space-y-5">
-      <PageHeading eyebrow="On-chain proof" title="Proof Receipt / 链上证明凭证" description="把报告哈希、证据哈希和交易哈希压缩成一张可复核凭证。链上只保存摘要，不把报告正文伪装成已上链。" />
+      <PageHeading eyebrow="On-chain proof" title="Proof Receipts" description="Review report hash, evidence hash, calldata, transaction state, and local verification for each Agent report. Fallback receipts remain explicit and are never presented as live transactions." />
 
       <div className="grid gap-3 md:grid-cols-3">
         <ReadinessCard label="Live ready" active={readiness.state === "live ready"} detail={readiness.state === "live ready" ? "contract + explorer + wallet ready" : "requires contract, explorer, and browser wallet"} />
-        <ReadinessCard label="Mock fallback" active={readiness.state === "mock fallback" || readiness.state === "not configured"} detail="local receipt remains explicit and reviewable" />
+        <ReadinessCard label="Fallback receipt" active={readiness.state === "mock fallback" || readiness.state === "not configured"} detail="local receipt remains explicit and reviewable" />
         <ReadinessCard label="Not configured" active={readiness.state === "not configured"} detail="no contract address means no fake on-chain write" />
       </div>
 
@@ -203,8 +203,8 @@ export function AttestationPage() {
                   <FileCheck2 aria-hidden className="h-4 w-4" />
                 </span>
                 <div>
-                  <h2 className="text-lg font-semibold text-slate-950">凭证摘要</h2>
-                  <p className="mt-1 text-xs text-slate-500">{selectedReport.title} / {selectedReport.sourceMode ?? "mock"} / {readiness.state === "live ready" ? "live-ready chain adapter" : "mock fallback receipt"}</p>
+                  <h2 className="text-lg font-semibold text-slate-950">Receipt summary</h2>
+                  <p className="mt-1 text-xs text-slate-500">{selectedReport.title} / source: {selectedReport.sourceMode ?? "mock"} / {readiness.state === "live ready" ? "live write path" : "fallback receipt"}</p>
                 </div>
               </div>
               <label className="mt-3 grid max-w-xl gap-1 text-xs font-medium text-slate-600">
@@ -270,9 +270,9 @@ export function AttestationPage() {
             <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-800">
               <div className="flex items-center gap-2 font-semibold">
                 <AlertTriangle aria-hidden className="h-4 w-4" />
-                真实写链已禁用
+                Real chain write disabled
               </div>
-              <p className="mt-1 text-xs leading-5">缺少 {readiness.missing.join(", ") || "required chain readiness"}。当前只展示明确标注的 mock fallback，不伪造 live transaction。</p>
+              <p className="mt-1 text-xs leading-5">Missing {readiness.missing.join(", ") || "required chain readiness"}. The page only shows an explicit fallback receipt and does not fabricate a live transaction.</p>
             </div>
           ) : null}
 
@@ -293,7 +293,7 @@ export function AttestationPage() {
             <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
               <div>
                 <h3 className="text-sm font-semibold text-slate-950">Sepolia contract payload</h3>
-                <p className="mt-1 text-xs leading-5 text-slate-500">完整 ABI 写入 report/evidence hash、topic、riskScore、alphaScore、verdict 和 metadataURI。</p>
+                <p className="mt-1 text-xs leading-5 text-slate-500">Full ABI payload writes report/evidence hash, topic, riskScore, alphaScore, verdict, and metadataURI.</p>
               </div>
               <span className="w-fit rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 ring-1 ring-slate-200">attest(bytes32,bytes32,string,uint8,uint8,string,string)</span>
             </div>
@@ -309,12 +309,12 @@ export function AttestationPage() {
         <aside className="grid gap-4">
           <ProofExplainer
             title="Why on-chain?"
-            detail="证明报告与证据包在这个时间点已经存在，且后续没有被静默改写。DAO 或投研团队可以复核同一份哈希记录。"
+            detail="The receipt proves that the report and evidence packet existed at this point in time and were not silently rewritten later."
             bullets={["timestamp proof", "tamper evidence", "shared review record"]}
           />
           <div className={clsx(cardClass, "p-4")}>
             <h2 className="text-sm font-semibold text-slate-950">Verify locally</h2>
-            <p className="mt-2 text-sm leading-6 text-slate-600">重新计算 report JSON 与 evidence packet 的哈希，再与凭证里的 Report Hash 和 Evidence Hash 对比。</p>
+            <p className="mt-2 text-sm leading-6 text-slate-600">Recompute the report JSON and evidence packet hash, then compare them with the receipt values.</p>
             <div className="mt-3 grid gap-2">
               <ProofCheckLine label="Report JSON" passed={Boolean(localVerification?.reportHashMatch)} />
               <ProofCheckLine label="Evidence packet" passed={Boolean(localVerification?.evidenceHashMatch)} />
@@ -324,8 +324,8 @@ export function AttestationPage() {
               type="button"
               onClick={() =>
                 downloadJson("chainpulse-proof-bundle.json", {
-                  report: reports[0],
-                  evidence: reports[0].evidence,
+                  report: selectedReport,
+                  evidence: selectedReport.evidence,
                   reportHash: record.reportHash,
                   evidenceHash: record.evidenceHash,
                   txHash: record.txHash,
@@ -356,8 +356,8 @@ export function AttestationPage() {
             </button>
           </div>
           <div className={clsx(cardClass, "p-4")}>
-            <h2 className="text-sm font-semibold text-slate-950">Judge proof panel</h2>
-            <p className="mt-2 text-sm leading-6 text-slate-600">10 秒检查口径：原始 report JSON 和 evidence packet 可下载；页面本地复算 SHA-256；链上只写哈希；无合约或钱包时按钮禁用并说明缺什么。</p>
+            <h2 className="text-sm font-semibold text-slate-950">Proof review panel</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600">Fast review path: download the raw report JSON and evidence packet, recompute SHA-256 locally, write only hashes on-chain, and keep real writes disabled until configuration is complete.</p>
             <div className="mt-3 grid gap-2 text-xs text-slate-600">
               <span>1. Hashes are recomputed locally, not typed by hand.</span>
               <span>2. Evidence links back to xAPI trace actions.</span>
@@ -368,10 +368,10 @@ export function AttestationPage() {
       </div>
 
       <ProofChain
-        topic={reports[0].topic}
-        mode={reports[0].mode}
-        actions={reports[0].evidence.map((item) => item.source.replace("xapi:", ""))}
-        evidenceCount={reports[0].evidence.length}
+        topic={selectedReport.topic}
+        mode={selectedReport.mode}
+        actions={selectedReport.evidence.map((item) => item.source.replace("xapi:", ""))}
+        evidenceCount={selectedReport.evidence.length}
         reportHash={record.reportHash}
         evidenceHash={record.evidenceHash}
         txHash={record.txHash}
@@ -383,10 +383,10 @@ export function AttestationPage() {
         <div className={clsx(cardClass, "p-4")}>
           <div className="flex items-center gap-2">
             <PackageCheck aria-hidden className="h-4 w-4 text-slate-500" />
-            <h2 className="text-sm font-semibold text-slate-950">证据包概览</h2>
+            <h2 className="text-sm font-semibold text-slate-950">Evidence packet overview</h2>
           </div>
           <div className="mt-3 grid gap-3">
-            {reports[0].evidence.map((item) => (
+            {selectedReport.evidence.map((item) => (
               <div key={item.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-sm font-medium text-slate-900">{item.title}</p>
@@ -405,14 +405,14 @@ export function AttestationPage() {
                 <Filter aria-hidden className="h-4 w-4" />
               </span>
               <div className="min-w-0">
-                <h2 className="text-sm font-semibold text-slate-950">证明历史</h2>
-                <p className="mt-0.5 text-xs text-slate-500">按模式、状态、日期和关键词查看证明记录。</p>
+                <h2 className="text-sm font-semibold text-slate-950">Proof history</h2>
+                <p className="mt-0.5 text-xs text-slate-500">Filter proof records by mode, status, date, and keyword.</p>
               </div>
             </div>
 
             <div className="mt-4 grid gap-3 lg:grid-cols-12">
               <label className="grid gap-1 lg:col-span-4">
-                <span className="text-xs font-medium text-slate-600">搜索证明</span>
+                <span className="text-xs font-medium text-slate-600">Search proofs</span>
                 <input
                   type="search"
                   name="proof-search"
@@ -426,7 +426,7 @@ export function AttestationPage() {
               </label>
 
               <label className="grid gap-1 lg:col-span-3">
-                <span className="text-xs font-medium text-slate-600">模式</span>
+                <span className="text-xs font-medium text-slate-600">Mode</span>
                 <select name="proof-mode" className={inputClass} value={historyFilters.mode} autoComplete="off" onChange={(event) => setHistoryFilters((currentFilters) => ({ ...currentFilters, mode: event.target.value as ProofHistoryFilters["mode"] }))}>
                   <option>All</option>
                   <option>Alpha Scan</option>
@@ -435,16 +435,16 @@ export function AttestationPage() {
                 </select>
               </label>
               <label className="grid gap-1 lg:col-span-3">
-                <span className="text-xs font-medium text-slate-600">证明状态</span>
+                <span className="text-xs font-medium text-slate-600">Proof status</span>
                 <select name="proof-status" className={inputClass} value={historyFilters.status} autoComplete="off" onChange={(event) => setHistoryFilters((currentFilters) => ({ ...currentFilters, status: event.target.value as ProofStatusFilter }))}>
                   <option>All</option>
-                  <option>已上链</option>
-                  <option>待证明</option>
+                  <option>Attested</option>
+                  <option>Pending</option>
                 </select>
               </label>
 
               <fieldset className="grid gap-2 lg:col-span-12">
-                <legend className="text-xs font-medium text-slate-600">证明日期范围</legend>
+                <legend className="text-xs font-medium text-slate-600">Proof date range</legend>
                 <div className="flex flex-wrap items-center gap-2">
                   {proofHistoryDatePresets.map((option) => (
                     <button
@@ -465,22 +465,22 @@ export function AttestationPage() {
                 {datePreset === "custom" ? (
                   <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
                     <label className="grid gap-1">
-                      <span className="text-xs font-medium text-slate-600">开始日期</span>
+                      <span className="text-xs font-medium text-slate-600">Start date</span>
                       <input className={inputClass} name="proof-start-date" type="date" value={historyFilters.startDate} autoComplete="off" onChange={(event) => updateCustomDate("startDate", event.target.value)} />
                     </label>
                     <label className="grid gap-1">
-                      <span className="text-xs font-medium text-slate-600">结束日期</span>
+                      <span className="text-xs font-medium text-slate-600">End date</span>
                       <input className={inputClass} name="proof-end-date" type="date" value={historyFilters.endDate} autoComplete="off" onChange={(event) => updateCustomDate("endDate", event.target.value)} />
                     </label>
                     <button className={buttonClass} type="button" onClick={clearCustomDateRange}>
-                      清空日期
+                      Clear dates
                     </button>
                   </div>
                 ) : null}
               </fieldset>
 
               <span className="w-fit rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700 lg:col-span-12">
-                Showing {filteredProofReports.length} of {reports.length} proof records
+                Showing {filteredProofReports.length} of {reportItems.length} proof records
               </span>
             </div>
           </div>
@@ -490,7 +490,7 @@ export function AttestationPage() {
               <ProofHistoryRow key={report.id} report={report} txHash={record.txHash} copiedKey={copiedKey} copyText={copyText} />
             ))}
           </div>
-          {filteredProofReports.length === 0 ? <EmptyState title="没有匹配证明" detail="调整关键词、日期、模式或证明状态后重试。" /> : null}
+          {filteredProofReports.length === 0 ? <EmptyState title="No proof records matched" detail="Adjust keyword, date, mode, or proof status and try again." /> : null}
         </div>
       </div>
     </section>
@@ -577,7 +577,7 @@ function ProofHistoryRow({
   copyText: (text: string, label: string) => Promise<void>;
 }) {
   const proofStatus = getProofStatus(report);
-  const txValue = proofStatus === "已上链" ? txHash : "pending";
+  const txValue = proofStatus === "Attested" ? txHash : "pending";
 
   return (
     <div className="p-4">
@@ -630,7 +630,7 @@ function ProofHashLine({
 }
 
 function ProofStatusBadge({ status }: { status: Exclude<ProofStatusFilter, "All"> }) {
-  const attested = status === "已上链";
+  const attested = status === "Attested";
 
   return (
     <span className={clsx("inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold ring-1", attested ? "bg-emerald-50 text-emerald-700 ring-emerald-100" : "bg-orange-50 text-orange-700 ring-orange-100")}>
@@ -659,7 +659,7 @@ function filterProofHistory(items: Report[], filters: ProofHistoryFilters) {
 }
 
 function getProofStatus(report: Report): Exclude<ProofStatusFilter, "All"> {
-  return report.status === "已上链" ? "已上链" : "待证明";
+  return report.attestation?.onChainStatus === "confirmed" || report.status === "已上链" ? "Attested" : "Pending";
 }
 
 function recordFromReport(report: Report): AttestationRecord | null {
@@ -727,8 +727,8 @@ function getProofDateRangeForPreset(preset: Exclude<ProofHistoryDatePreset, "cus
 }
 
 function formatProofDateRangeHint(filters: ProofHistoryFilters) {
-  if (!filters.startDate && !filters.endDate) return "当前显示全部日期";
-  return `当前范围：${filters.startDate || "不限"} 至 ${filters.endDate || "不限"}`;
+  if (!filters.startDate && !filters.endDate) return "Showing all dates";
+  return `Current range: ${filters.startDate || "open"} to ${filters.endDate || "open"}`;
 }
 
 function getLatestReportDate(items: Report[]) {

@@ -87,7 +87,7 @@ export function RunningTasksPage() {
   function cancelTask() {
     setCurrentTask((task) => ({ ...task, status: "Cancelled", currentStep: "任务解析" }));
     appendLog("task cancelled by operator");
-    notify("任务已取消");
+    notify("Task cancelled");
   }
 
   function rerunTask() {
@@ -102,9 +102,9 @@ export function RunningTasksPage() {
     setLogs([
       `[${timestamp}] rerun requested for ${currentTask.topic}`,
       `[${timestamp}] mode=${currentTask.mode}`,
-      `[${timestamp}] mock progress reset to running`
+      `[${timestamp}] run progress reset to running`
     ]);
-    notify("已重新排队运行");
+    notify("Run queued again");
   }
 
   function openReportDraft() {
@@ -117,12 +117,12 @@ export function RunningTasksPage() {
       router.push(`/reports/${matchedReport.id}`);
       return;
     }
-    notify("当前任务暂无报告草稿");
+    notify("No report draft is available for this task");
   }
 
   return (
     <section className="space-y-5">
-      <PageHeading eyebrow="Agent Runtime" title="运行中的任务" description="展示 Agent 从任务解析、xAPI action 发现、Schema 读取到证据归一化和报告生成的执行过程。" />
+      <PageHeading eyebrow="Agent Runtime" title="Agent Runs" description="Track how an Agent run moves from intent parsing and tool discovery through evidence normalization, AI reasoning, report generation, and proof preparation." />
       <div className="grid gap-5 xl:grid-cols-[1fr_360px]">
         <div className={clsx(cardClass, "p-4 sm:p-5")}>
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
@@ -134,24 +134,24 @@ export function RunningTasksPage() {
                 </h2>
                 <StatusBadge status={currentTask.status} />
               </div>
-              <p className="mt-2 text-sm text-slate-500">开始时间 {currentTask.startedAt}，已运行 {currentTask.elapsed}</p>
+              <p className="mt-2 text-sm text-slate-500">Started {currentTask.startedAt}; elapsed {currentTask.elapsed}</p>
             </div>
             <div className="flex gap-2">
               <button className={buttonClass} type="button" onClick={() => router.push(`/trace?task=${currentTask.id}`)}>
                 <Network aria-hidden className="h-4 w-4" />
-                查看 Trace
+                View Trace
               </button>
               <button className={buttonClass} type="button" onClick={openReportDraft}>
                 <FileText aria-hidden className="h-4 w-4" />
-                查看报告草稿
+                View Report Draft
               </button>
               <button className={buttonClass} type="button" onClick={cancelTask}>
                 <X aria-hidden className="h-4 w-4" />
-                取消任务
+                Cancel
               </button>
               <button className={buttonClass} type="button" onClick={rerunTask}>
                 <RefreshCcw aria-hidden className="h-4 w-4" />
-                重新运行
+                Rerun
               </button>
             </div>
           </div>
@@ -178,11 +178,11 @@ export function RunningTasksPage() {
           </div>
           <div className="mt-6">
             <div className="mb-2 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-slate-950">实时执行日志</h3>
+              <h3 className="text-sm font-semibold text-slate-950">Execution log</h3>
               <div className="flex gap-2">
-                <button className={buttonClass} type="button" onClick={() => appendLog("mock evidence item appended")}>
+                <button className={buttonClass} type="button" onClick={() => appendLog("manual evidence item appended")}>
                   <Plus aria-hidden className="h-4 w-4" />
-                  追加日志
+                  Add log
                 </button>
                 <button
                   className={clsx(buttonClass, autoScroll && selectedButtonClass)}
@@ -190,11 +190,11 @@ export function RunningTasksPage() {
                   aria-pressed={autoScroll}
                   onClick={() => {
                     setAutoScroll((value) => !value);
-                    notify(autoScroll ? "已关闭自动滚动" : "已开启自动滚动");
+                    notify(autoScroll ? "Auto-scroll disabled" : "Auto-scroll enabled");
                   }}
                 >
                   <Radio aria-hidden className="h-4 w-4" />
-                  {autoScroll ? "自动滚动开" : "自动滚动关"}
+                  {autoScroll ? "Auto-scroll on" : "Auto-scroll off"}
                 </button>
               </div>
             </div>
@@ -215,8 +215,8 @@ export function RunningTasksPage() {
         </div>
 
         <div className="space-y-4">
-          <StatCard icon={Timer} label="当前耗时" value={currentTask.elapsed} detail="目标小于 6 分钟" tone="blue" />
-          <StatCard icon={Database} label="Evidence items" value="18" detail="4 类 xAPI 来源" tone="green" />
+          <StatCard icon={Timer} label="Elapsed" value={currentTask.elapsed} detail="target under 6 minutes" tone="blue" />
+          <StatCard icon={Database} label="Evidence items" value="18" detail="4 xAPI source classes" tone="green" />
           <div className={clsx(cardClass, "p-4")}>
             <h2 className="text-sm font-semibold text-slate-950">Next step</h2>
             <div className="mt-3 grid gap-2">
@@ -236,7 +236,7 @@ export function RunningTasksPage() {
           </div>
           {latestRun ? (
             <InfoPanel
-              title="当前任务概览"
+              title="Current run overview"
               rows={[
                 ["Input", latestRun.topic],
                 ["Mode", latestRun.mode],
@@ -246,7 +246,7 @@ export function RunningTasksPage() {
             />
           ) : null}
           <div className={clsx(cardClass, "overflow-hidden")}>
-            <SectionHeader title="其他任务" action="3 tasks" />
+            <SectionHeader title="Other runs" action="3 tasks" />
             <div className="divide-y divide-slate-100">
               {taskList.filter((task) => task.id !== currentTask.id).slice(0, 3).map((task) => (
                 <div key={task.id} className="p-4">
@@ -307,6 +307,6 @@ function createInitialLogs(latestRun: WorkspaceRunContext | null): string[] {
   return [
     `[${latestRun.createdAt}] Intent Parser resolved topic=${latestRun.topic} mode=${latestRun.mode}`,
     `[${latestRun.createdAt}] Advanced filters window=${latestRun.advancedFilters.evidenceWindow} confidence=${latestRun.advancedFilters.minimumConfidence} classes=${latestRun.advancedFilters.xapiClasses}`,
-    `[${latestRun.createdAt}] mock run queued from Workspace`
+    `[${latestRun.createdAt}] fallback audit run queued from Workspace`
   ];
 }

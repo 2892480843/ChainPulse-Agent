@@ -9,71 +9,71 @@ import { PageHeading } from "@/components/ui/PageHeading";
 import { ProofChain } from "@/components/ui/ProofChain";
 import { buttonClass, cardClass, primaryButtonClass } from "@/components/ui/styles";
 
-const demoSteps = [
+const runbookSteps = [
   {
-    title: "Step 1",
+    title: "Run setup",
     path: "/workspace",
     href: "/workspace",
     cta: "Open workspace",
-    goal: "Input ETH and choose Risk Scan.",
-    lookFor: "The Agent turns a target, mode, evidence window, and confidence threshold into a run context.",
+    goal: "Choose a topic, scan mode, evidence window, and confidence threshold.",
+    lookFor: "AI planning creates a tool plan before evidence collection starts.",
     time: "35s",
     icon: PlayCircle
   },
   {
-    title: "Step 2",
+    title: "Execution",
     path: "/tasks",
     href: "/tasks",
     cta: "Open tasks",
-    goal: "Watch the Agent run through timeline and logs.",
-    lookFor: "Timeline stages explain why each workflow step matters before a report exists.",
+    goal: "Review the saved Agent run, timeline, and execution log.",
+    lookFor: "The run exposes state, timing, report handoff, and source mode.",
     time: "35s",
     icon: Route
   },
   {
-    title: "Step 3",
+    title: "Tool audit",
     path: "/trace?task=task_eth_risk_001",
     href: "/trace?task=task_eth_risk_001",
-    cta: "Open xAPI trace",
-    goal: "Inspect xAPI action, schema, input hash, and output hash.",
-    lookFor: "Schema-first tool calling makes every external action reviewable.",
+    cta: "Open audit trace",
+    goal: "Inspect AI reasoning traces and evidence tool calls.",
+    lookFor: "Prompt hash, input hash, output hash, latency, and fallback mode are visible.",
     time: "40s",
     icon: Network
   },
   {
-    title: "Step 4",
+    title: "Report review",
     path: "/reports/rep_eth_001",
     href: "/reports/rep_eth_001",
     cta: "Open ETH report",
     goal: "Read risk score, evidence, rationale, and suggested actions.",
-    lookFor: "Evidence cards link back to the exact Trace that produced them.",
+    lookFor: "The report is AI-generated, evidence-grounded, and hash-ready.",
     time: "45s",
     icon: FileText
   },
   {
-    title: "Step 5",
+    title: "Proof receipt",
     path: "/attestation",
     href: "/attestation",
     cta: "Open attestation",
     goal: "Verify reportHash, evidenceHash, and txHash.",
-    lookFor: "The same decision record can be reviewed by a DAO after anchoring.",
+    lookFor: "The same decision record can be reviewed after Sepolia anchoring.",
     time: "25s",
     icon: ShieldCheck
   }
 ];
 
-const judgeNotes = [
+const auditNotes = [
   {
-    title: "Agent 不是黑盒",
-    detail: "每个 xAPI action、schema、input/output hash 都能在 Trace 回看。"
+    title: "AI reasoning is inspectable",
+    detail: "Planner output, model metadata, prompt hash, and reasoning summary remain available for review."
   },
   {
-    title: "报告不是孤证",
-    detail: "Evidence 卡片回链到 Trace，结论有来源、有权重、有置信度。"
+    title: "Evidence is not detached",
+    detail: "Evidence cards link back to the trace that produced them, including source mode and confidence."
   },
   {
-    title: "证明不是截图",
-    detail: "Report Hash 与 Evidence Hash 被锚定，DAO 后续可复核同一份记录。"
+    title: "Proof is reproducible",
+    detail: "Report hash and evidence hash can be recomputed locally before or after on-chain anchoring."
   }
 ];
 
@@ -81,17 +81,17 @@ const scorecardItems = [
   {
     label: "Agent workflow",
     status: "ready",
-    detail: "Workspace run now captures health, search, schema discovery, call, runtime traces, and report handoff."
+    detail: "Workspace run captures AI plan, tool execution, runtime traces, report generation, and handoff."
   },
   {
     label: "xAPI integration",
     status: "live/fallback transparent",
-    detail: "Server route keeps XAPI_KEY private; UI labels live xAPI, no XAPI_KEY, or upstream fallback."
+    detail: "Server routes keep XAPI_KEY private; UI labels live, partial, fallback, and mock evidence states."
   },
   {
     label: "Evidence traceability",
     status: "ready",
-    detail: "Evidence cards point to source action, weight, contribution, and related xAPI Trace."
+    detail: "Evidence cards point to source action, weight, contribution, confidence, and related Trace."
   },
   {
     label: "Local hash verification",
@@ -101,19 +101,19 @@ const scorecardItems = [
   {
     label: "On-chain readiness",
     status: "wallet/contract gated",
-    detail: "No contract address means not configured; contract + wallet unlocks the viem transaction path."
+    detail: "Real write actions stay disabled until contract, explorer, and browser wallet are available."
   },
   {
     label: "Test/build readiness",
     status: "gated",
-    detail: "lint, typecheck, test, and build are the final acceptance commands before demo."
+    detail: "lint, typecheck, test, and build are the final acceptance commands before release."
   }
 ];
 
 export function DemoPage() {
   const { copyText } = useAppActions();
   const ethReport = reports[0];
-  const demoLinks = demoSteps.map((step) => ({ step: step.title, goal: step.goal, url: step.href }));
+  const runbookLinks = runbookSteps.map((step) => ({ step: step.title, goal: step.goal, url: step.href }));
 
   return (
     <section className="space-y-5">
@@ -121,29 +121,29 @@ export function DemoPage() {
         <div className={clsx(cardClass, "p-4 sm:p-5")}>
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <PageHeading
-              eyebrow="Demo Mode"
-              title="路演导演台"
-              description="3 分钟内展示一条完整链路：输入目标、Agent 运行、xAPI Trace、证据报告、链上证明。重点不是功能堆叠，而是让评委一眼看懂可审计智能分析。"
+              eyebrow="Review Console"
+              title="Operator Runbook"
+              description="A compact release review path for the full Agent lifecycle: AI plan, evidence tools, audit traces, generated report, and Sepolia proof receipt."
             />
-            <button className={primaryButtonClass} type="button" onClick={() => copyText(JSON.stringify(demoLinks, null, 2), "demo-links")}>
+            <button className={primaryButtonClass} type="button" onClick={() => copyText(JSON.stringify(runbookLinks, null, 2), "runbook-links")}>
               <ClipboardCopy aria-hidden className="h-4 w-4" />
-              Copy demo links
+              Copy runbook links
             </button>
           </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-3">
-            <DemoSignal label="核心价值" value="Evidence-first Agent" detail="先证据，再结论" />
-            <DemoSignal label="推荐路线" value="$ETH Risk Scan" detail="最完整证明链" />
-            <DemoSignal label="路演节奏" value="3 min" detail="Trace 与 Report 是重心" />
+            <RunbookSignal label="Operating model" value="AI + evidence tools" detail="plan, collect, write, verify" />
+            <RunbookSignal label="Baseline path" value="$ETH Risk Scan" detail="complete proof chain" />
+            <RunbookSignal label="Review target" value="5 checkpoints" detail="trace and report first" />
           </div>
         </div>
 
         <aside className={clsx(cardClass, "p-4 sm:p-5")}>
           <div className="flex items-center gap-2">
             <Eye aria-hidden className="h-4 w-4 text-blue-700" />
-            <h2 className="text-sm font-semibold text-slate-950">评委观察清单</h2>
+            <h2 className="text-sm font-semibold text-slate-950">Audit review checklist</h2>
           </div>
           <ul className="mt-3 space-y-3">
-            {judgeNotes.map((note) => (
+            {auditNotes.map((note) => (
               <li key={note.title} className="grid grid-cols-[22px_1fr] gap-2">
                 <CheckCircle2 aria-hidden className="mt-0.5 h-4 w-4 text-emerald-600" />
                 <div>
@@ -171,10 +171,10 @@ export function DemoPage() {
       <div className={clsx(cardClass, "p-4 sm:p-5")}>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 className="text-sm font-semibold text-slate-950">100-point judge checklist</h2>
-            <p className="mt-1 text-xs leading-5 text-slate-500">用评委口径自检：不是 mock UI，而是可解释、可审计、可复算、可配置真实链上证明的 Agent 原型。</p>
+            <h2 className="text-sm font-semibold text-slate-950">Release acceptance checklist</h2>
+            <p className="mt-1 text-xs leading-5 text-slate-500">Use this panel to verify that the product is explainable, auditable, recomputable, and explicit about live versus fallback data.</p>
           </div>
-          <span className="w-fit rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-100">demo gate</span>
+          <span className="w-fit rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-100">release gate</span>
         </div>
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {scorecardItems.map((item) => (
@@ -191,7 +191,7 @@ export function DemoPage() {
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
         <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-5">
-          {demoSteps.map((step) => {
+          {runbookSteps.map((step) => {
             const Icon = step.icon;
             return (
               <article key={step.path} className={clsx(cardClass, "grid gap-3 p-4")}>
@@ -209,7 +209,7 @@ export function DemoPage() {
                       <dd className="mt-1 text-slate-700">{step.goal}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs font-semibold uppercase text-slate-500">Judges should see</dt>
+                      <dt className="text-xs font-semibold uppercase text-slate-500">Operator should verify</dt>
                       <dd className="mt-1 text-slate-700">{step.lookFor}</dd>
                     </div>
                   </dl>
@@ -229,11 +229,11 @@ export function DemoPage() {
         </div>
 
         <aside className={clsx(cardClass, "p-4")}>
-          <h2 className="text-sm font-semibold text-slate-950">3-minute talk track</h2>
+          <h2 className="text-sm font-semibold text-slate-950">Operator review flow</h2>
           <ol className="mt-3 space-y-3 text-sm leading-6 text-slate-600">
-            <li>1. 用 Workspace 说明 Agent 如何接收目标、模式与证据窗口。</li>
-            <li>2. 用 Trace 证明 xAPI 调用可审计，而不是只看最终答案。</li>
-            <li>3. 用 Report 与 Attestation 收束成可复核的 DAO 决策记录。</li>
+            <li>1. Start from Workspace to confirm the Agent objective, mode, and evidence policy.</li>
+            <li>2. Use Audit Trace to review AI planning and each external evidence call.</li>
+            <li>3. Finish in Report and Attestation with a recomputable decision record.</li>
           </ol>
         </aside>
       </div>
@@ -241,7 +241,7 @@ export function DemoPage() {
   );
 }
 
-function DemoSignal({ label, value, detail }: { label: string; value: string; detail: string }) {
+function RunbookSignal({ label, value, detail }: { label: string; value: string; detail: string }) {
   return (
     <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
       <p className="text-xs font-semibold uppercase text-slate-500">{label}</p>

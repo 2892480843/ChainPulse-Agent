@@ -38,14 +38,14 @@ afterEach(() => {
 describe("ChainPulse dashboard", () => {
   it("renders every app route entry with the expected page title", () => {
     const routes = [
-      ["/workspace", WorkspaceRoute, "智能分析工作台"],
-      ["/demo", DemoRoute, "路演导演台"],
-      ["/tasks", TasksRoute, "运行中的任务"],
+      ["/workspace", WorkspaceRoute, "Agent Operations"],
+      ["/demo", DemoRoute, "Operator Runbook"],
+      ["/tasks", TasksRoute, "Agent Runs"],
       ["/reports", ReportsRoute, "报告中心"],
-      ["/trace", TraceRoute, "xAPI Trace"],
-      ["/attestation", AttestationRoute, "Proof Receipt / 链上证明凭证"],
+      ["/trace", TraceRoute, "AI / Tool Trace"],
+      ["/attestation", AttestationRoute, "Proof Receipts"],
       ["/watchlist", WatchlistRoute, "Watchlist"],
-      ["/settings", SettingsRoute, "设置"]
+      ["/settings", SettingsRoute, "Settings"]
     ] as const;
 
     for (const [routePath, RouteComponent, heading] of routes) {
@@ -59,35 +59,35 @@ describe("ChainPulse dashboard", () => {
   it("renders desktop sidebar links with the current route highlighted", () => {
     render(<DashboardApp />);
 
-    expect(screen.getByRole("complementary", { name: "主导航侧栏" })).toHaveClass("sticky", "top-0", "h-[100dvh]", "overflow-y-auto");
-    expect(screen.getByRole("link", { name: "工作台" })).toHaveAttribute("href", "/workspace");
-    expect(screen.getByRole("link", { name: "评委演示" })).toHaveAttribute("href", "/demo");
-    expect(screen.getByRole("link", { name: "运行中的任务" })).toHaveAttribute("href", "/tasks");
-    expect(screen.getByRole("link", { name: "报告中心" })).toHaveAttribute("href", "/reports");
-    expect(screen.getByRole("link", { name: "xAPI Trace" })).toHaveAttribute("href", "/trace");
-    expect(screen.getByRole("link", { name: "链上证明" })).toHaveAttribute("href", "/attestation");
+    expect(screen.getByRole("complementary", { name: "Primary navigation" })).toHaveClass("sticky", "top-0", "h-[100dvh]", "overflow-y-auto");
+    expect(screen.getByRole("link", { name: "Workspace" })).toHaveAttribute("href", "/workspace");
+    expect(screen.getByRole("link", { name: "Review Console" })).toHaveAttribute("href", "/demo");
+    expect(screen.getByRole("link", { name: "Agent Runs" })).toHaveAttribute("href", "/tasks");
+    expect(screen.getByRole("link", { name: "Reports" })).toHaveAttribute("href", "/reports");
+    expect(screen.getByRole("link", { name: "Audit Trace" })).toHaveAttribute("href", "/trace");
+    expect(screen.getByRole("link", { name: "Proofs" })).toHaveAttribute("href", "/attestation");
     expect(screen.getByRole("link", { name: "Watchlist" })).toHaveAttribute("href", "/watchlist");
-    expect(screen.getByRole("link", { name: "设置" })).toHaveAttribute("href", "/settings");
-    expect(screen.getByRole("link", { name: "工作台" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "Settings" })).toHaveAttribute("href", "/settings");
+    expect(screen.getByRole("link", { name: "Workspace" })).toHaveAttribute("aria-current", "page");
   });
 
   it("renders the demo flow with the expected route CTAs", () => {
     pathname = "/demo";
     render(<DashboardApp />);
 
-    expect(screen.getByRole("heading", { name: "路演导演台" })).toBeInTheDocument();
-    expect(screen.getByText("Proof Chain 摘要")).toBeInTheDocument();
-    expect(screen.getByText("评委观察清单")).toBeInTheDocument();
-    expect(screen.getByText("100-point judge checklist")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Operator Runbook" })).toBeInTheDocument();
+    expect(screen.getByText("Proof Chain Summary")).toBeInTheDocument();
+    expect(screen.getByText("Audit review checklist")).toBeInTheDocument();
+    expect(screen.getByText("Release acceptance checklist")).toBeInTheDocument();
     expect(screen.getByText("Agent workflow")).toBeInTheDocument();
     expect(screen.getByText("xAPI integration")).toBeInTheDocument();
     expect(screen.getByText("Local hash verification")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Open workspace/ })).toHaveAttribute("href", "/workspace");
     expect(screen.getByRole("link", { name: /Open tasks/ })).toHaveAttribute("href", "/tasks");
-    expect(screen.getByRole("link", { name: /Open xAPI trace/ })).toHaveAttribute("href", "/trace?task=task_eth_risk_001");
+    expect(screen.getByRole("link", { name: /Open audit trace/ })).toHaveAttribute("href", "/trace?task=task_eth_risk_001");
     expect(screen.getByRole("link", { name: /Open ETH report/ })).toHaveAttribute("href", "/reports/rep_eth_001");
     expect(screen.getByRole("link", { name: /Open attestation/ })).toHaveAttribute("href", "/attestation");
-    expect(screen.getByRole("button", { name: "Copy demo links" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Copy runbook links" })).toBeInTheDocument();
   });
 
   it("stores the workspace run context and navigates to running tasks", async () => {
@@ -95,15 +95,15 @@ describe("ChainPulse dashboard", () => {
     vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("offline in test"));
     render(<DashboardApp />);
 
-    expect(screen.getByText("任务配置面板")).toBeInTheDocument();
-    expect(screen.getByText("$ETH 推荐演示路径")).toBeInTheDocument();
-    expect(screen.getByText("Run Agent 会执行 health -> search -> schema -> call")).toBeInTheDocument();
-    await user.clear(screen.getByLabelText("分析对象"));
-    await user.type(screen.getByLabelText("分析对象"), "$ZEC");
+    expect(screen.getByText("Run configuration")).toBeInTheDocument();
+    expect(screen.getByText("$ETH baseline")).toBeInTheDocument();
+    expect(screen.getByText("Run Agent executes AI plan -> evidence tools -> AI report writer -> hash audit")).toBeInTheDocument();
+    await user.clear(screen.getByLabelText("Investigation target"));
+    await user.type(screen.getByLabelText("Investigation target"), "$ZEC");
     await user.selectOptions(screen.getByLabelText("Evidence window"), "7d");
     await user.click(screen.getByRole("button", { name: "Run Agent" }));
 
-    expect(await screen.findByText("mock fallback")).toBeInTheDocument();
+    expect((await screen.findAllByText("Fallback audit")).length).toBeGreaterThan(0);
     expect(routerPush).toHaveBeenCalledWith(expect.stringMatching(/^\/tasks\?task=cp-run-/));
     expect(window.sessionStorage.getItem("chainpulse:last-run")).toContain("$ZEC");
     expect(window.sessionStorage.getItem("chainpulse:last-run")).toContain("7d");
@@ -248,38 +248,38 @@ describe("ChainPulse dashboard", () => {
     pathname = "/attestation";
     render(<DashboardApp />);
 
-    expect(screen.getByRole("heading", { name: "Proof Receipt / 链上证明凭证" })).toBeInTheDocument();
-    expect(screen.getByText("凭证摘要")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Proof Receipts" })).toBeInTheDocument();
+    expect(screen.getByText("Receipt summary")).toBeInTheDocument();
     expect(screen.getByText("Why on-chain?")).toBeInTheDocument();
     expect(screen.getByText("Verify locally")).toBeInTheDocument();
-    expect(screen.getByText("Judge proof panel")).toBeInTheDocument();
+    expect(screen.getByText("Proof review panel")).toBeInTheDocument();
     expect(await screen.findByText("Report Hash match")).toBeInTheDocument();
     expect(screen.getByText("Evidence Hash match")).toBeInTheDocument();
     expect(screen.getByText("Contract configured")).toBeInTheDocument();
     expect(screen.getByText("Wallet mode")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "今天" }));
+    await user.click(screen.getByRole("button", { name: "Today" }));
     expect(screen.getByText("Showing 2 of 4 proof records")).toBeInTheDocument();
     expect(screen.getAllByText("ETH Risk Baseline").length).toBeGreaterThan(0);
     expect(screen.getByText("ZEC Liquidity Caution")).toBeInTheDocument();
     expect(screen.queryByText("SOL Alpha Momentum")).not.toBeInTheDocument();
 
-    await user.selectOptions(screen.getByLabelText("证明状态"), "已上链");
+    await user.selectOptions(screen.getByLabelText("Proof status"), "Attested");
     expect(screen.getByText("Showing 1 of 4 proof records")).toBeInTheDocument();
     expect(screen.getAllByText("ETH Risk Baseline").length).toBeGreaterThan(0);
     expect(screen.queryByText("ZEC Liquidity Caution")).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "自定义" }));
-    await user.clear(screen.getByLabelText("开始日期"));
-    await user.type(screen.getByLabelText("开始日期"), "2026-06-03");
-    await user.clear(screen.getByLabelText("结束日期"));
-    await user.type(screen.getByLabelText("结束日期"), "2026-06-03");
+    await user.click(screen.getByRole("button", { name: "Custom" }));
+    await user.clear(screen.getByLabelText("Start date"));
+    await user.type(screen.getByLabelText("Start date"), "2026-06-03");
+    await user.clear(screen.getByLabelText("End date"));
+    await user.type(screen.getByLabelText("End date"), "2026-06-03");
     expect(screen.getByText("SOL Alpha Momentum")).toBeInTheDocument();
 
-    await user.type(screen.getByLabelText("搜索证明"), "SOL");
+    await user.type(screen.getByLabelText("Search proofs"), "SOL");
     expect(screen.getByText("Showing 1 of 4 proof records")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "清空日期" }));
-    expect(screen.getByLabelText("开始日期")).toHaveValue("");
-    expect(screen.getByLabelText("结束日期")).toHaveValue("");
+    await user.click(screen.getByRole("button", { name: "Clear dates" }));
+    expect(screen.getByLabelText("Start date")).toHaveValue("");
+    expect(screen.getByLabelText("End date")).toHaveValue("");
   });
 
   it("renders report detail and handles invalid report ids", () => {
@@ -292,7 +292,7 @@ describe("ChainPulse dashboard", () => {
 
     expect(screen.getByRole("heading", { name: "ETH Risk Baseline" })).toBeInTheDocument();
     expect(screen.getByText("Risk Score")).toBeInTheDocument();
-    expect(screen.getByText("可审计报告摘要")).toBeInTheDocument();
+    expect(screen.getByText("Auditable report summary")).toBeInTheDocument();
     expect(screen.getByText("Sticky audit summary")).toBeInTheDocument();
     expect(screen.getByText("Verify evidence chain")).toBeInTheDocument();
     expect(screen.getByText("Verdict rationale")).toBeInTheDocument();
@@ -313,7 +313,7 @@ describe("ChainPulse dashboard", () => {
         <ReportDetailPage reportId="missing_report" />
       </AppShell>
     );
-    expect(screen.getByText("未找到报告")).toBeInTheDocument();
+    expect(screen.getByText("No report record found")).toBeInTheDocument();
   });
 
   it("changes xAPI trace details when selecting another trace", async () => {
@@ -354,7 +354,7 @@ describe("ChainPulse dashboard", () => {
 
     render(<DashboardApp />);
 
-    expect(await screen.findByText("mock fallback")).toBeInTheDocument();
+    expect(await screen.findByText("Fallback audit")).toBeInTheDocument();
     expect(screen.getByText("no XAPI_KEY")).toBeInTheDocument();
   });
 
@@ -393,12 +393,12 @@ describe("ChainPulse dashboard", () => {
     pathname = "/tasks";
     render(<DashboardApp />);
 
-    await user.click(screen.getByRole("button", { name: "查看 Trace" }));
+    await user.click(screen.getByRole("button", { name: "View Trace" }));
     expect(routerPush).toHaveBeenCalledWith("/trace?task=task_eth_risk_001");
 
     const logRegion = screen.getByTestId("task-log-region");
     expect(logRegion).toHaveAttribute("data-auto-scroll", "true");
-    await user.click(screen.getByRole("button", { name: "追加日志" }));
+    await user.click(screen.getByRole("button", { name: "Add log" }));
     expect(logRegion).toHaveAttribute("data-log-count", "6");
   });
 
@@ -415,10 +415,10 @@ describe("ChainPulse dashboard", () => {
 
     const apiKeyInput = screen.getByLabelText("xAPI Key");
     expect(apiKeyInput).toHaveAttribute("type", "password");
-    await user.click(screen.getByRole("button", { name: "显示 API Key" }));
+    await user.click(screen.getByRole("button", { name: "Show API Key" }));
     expect(apiKeyInput).toHaveAttribute("type", "text");
-    await user.click(screen.getByRole("button", { name: "保存设置" }));
-    expect(screen.getByText(/已保存 \d{2}:\d{2}:\d{2}/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Save settings" }));
+    expect(screen.getByText(/Saved at \d{2}:\d{2}:\d{2}/)).toBeInTheDocument();
   });
 
   it("adds a watchlist target and highlights it", async () => {

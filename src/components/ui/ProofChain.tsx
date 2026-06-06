@@ -68,7 +68,7 @@ export function ProofChain({
     <div className={clsx(cardClass, compact ? "p-3 sm:p-4" : "p-4 sm:p-5")}>
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-sm font-semibold text-slate-950">{compact ? "Proof Chain 摘要" : "Proof Chain"}</h2>
+          <h2 className="text-sm font-semibold text-slate-950">{compact ? "Proof Chain Summary" : "Proof Chain"}</h2>
           <p className="mt-1 text-xs text-slate-500">{"User intent -> xAPI evidence -> report hashes -> on-chain proof."}</p>
         </div>
         <span className={clsx("rounded-full px-2.5 py-1 text-xs font-semibold", attested ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100" : "bg-amber-50 text-amber-700 ring-1 ring-amber-100")}>

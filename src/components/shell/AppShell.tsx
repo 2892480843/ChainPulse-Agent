@@ -41,7 +41,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       // Clipboard may be unavailable in preview and test contexts.
     }
     setCopiedKey(label);
-    notify("已复制");
+    notify("Copied");
     window.setTimeout(() => setCopiedKey(""), 1600);
   }, [notify]);
 
@@ -54,9 +54,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       anchor.download = filename;
       anchor.click();
       URL.revokeObjectURL(url);
-      notify("已下载 mock JSON");
+      notify("JSON exported");
     } catch {
-      notify("已生成 mock JSON");
+      notify("JSON export prepared");
     }
   }, [notify]);
 
@@ -65,13 +65,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <AppActionsContext.Provider value={actions}>
       <a className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-white focus:px-3 focus:py-2 focus:text-sm focus:font-semibold focus:text-blue-700 focus:shadow" href="#main-content">
-        跳到主内容
+        Skip to content
       </a>
-      <div className="min-h-[100dvh] bg-slate-100 text-slate-950 lg:grid lg:grid-cols-[280px_1fr]">
+      <div className="min-h-[100dvh] bg-[#f7f9fc] text-slate-950 lg:grid lg:grid-cols-[280px_1fr]">
         <Sidebar />
         <div className="flex min-w-0 flex-col">
           <Header />
-          <main id="main-content" className="min-w-0 flex-1 px-4 py-5 sm:px-6 lg:px-8" tabIndex={-1}>
+          <main id="main-content" className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8" tabIndex={-1}>
             <div className="mx-auto max-w-[1400px] animate-panel">{children}</div>
           </main>
           <Footer />

@@ -62,7 +62,7 @@ function TraceContent({ queryString }: { queryString: string }) {
           }));
         }
       })
-      .catch(() => notify("xAPI trace mock adapter 读取失败"));
+      .catch(() => notify("Trace fallback adapter failed"));
     return () => {
       cancelled = true;
     };
@@ -76,29 +76,29 @@ function TraceContent({ queryString }: { queryString: string }) {
 
   return (
     <section className="space-y-5">
-      <PageHeading eyebrow="xAPI audit" title="xAPI Trace" description="可视化展示 Agent 如何动态发现 action、读取 schema、执行调用并把 JSON 结果送入推理链。" />
+      <PageHeading eyebrow="Agent audit" title="AI / Tool Trace" description="Inspect AI planning, tool calls, input/output hashes, latency, and fallback state for every Agent run." />
       <RuntimeStatusBanner snapshot={runtimeSnapshot} />
       <div className="grid gap-4 md:grid-cols-5">
-        <StatCard icon={Network} label="xAPI 调用总数" value={`${traces.length}`} detail="当前任务 trace" tone="blue" />
-        <StatCard icon={CheckCircle2} label="成功率" value={`${Math.round((successCount / traces.length) * 100)}%`} detail={`${successCount} success`} tone="green" />
-        <StatCard icon={Clock} label="平均延迟" value={`${avgLatency}ms`} detail="mock timing" tone="orange" />
-        <StatCard icon={Timer} label="总耗时" value="25.1s" detail="含 retry" tone="blue" />
-        <StatCard icon={Code2} label="唯一能力数" value={`${uniqueCapabilities}`} detail="Twitter / Web / Crypto" tone="green" />
+        <StatCard icon={Network} label="Trace count" value={`${traces.length}`} detail="current task traces" tone="blue" />
+        <StatCard icon={CheckCircle2} label="Success rate" value={`${Math.round((successCount / traces.length) * 100)}%`} detail={`${successCount} success`} tone="green" />
+        <StatCard icon={Clock} label="Average latency" value={`${avgLatency}ms`} detail="current trace set" tone="orange" />
+        <StatCard icon={Timer} label="Total runtime" value="25.1s" detail="includes retries" tone="blue" />
+        <StatCard icon={Code2} label="Capabilities" value={`${uniqueCapabilities}`} detail="AI / Web / Crypto" tone="green" />
       </div>
 
       {traces.some((trace) => trace.status === "failed") ? (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
           <div className="flex items-center gap-2 font-semibold">
             <AlertTriangle aria-hidden className="h-4 w-4" />
-            <h2>失败 trace 风险提示</h2>
+            <h2>Failed trace review</h2>
           </div>
-          <p className="mt-1 leading-6 text-red-700">失败调用会阻断自动报告生成；演示时可点开 failed trace，说明 schema retry、error output 与 hash 占位如何被保留给审计。</p>
+          <p className="mt-1 leading-6 text-red-700">Failed calls affect report quality. Open each failed trace to review schema retry, error output, and retained hash placeholders.</p>
         </div>
       ) : null}
 
       <div className="grid gap-5 xl:grid-cols-[390px_1fr]">
         <div className={clsx(cardClass, "overflow-hidden")}>
-          <SectionHeader title="调用时间线" action="click to inspect" />
+          <SectionHeader title="Trace timeline" action="click to inspect" />
           <div className="thin-scrollbar max-h-[calc(100vh-260px)] divide-y divide-slate-100 overflow-y-auto">
             {traces.map((trace) => {
               const selected = selectedTraceId === trace.id;
@@ -147,7 +147,7 @@ function TraceContent({ queryString }: { queryString: string }) {
             </div>
             <button className={buttonClass} type="button" onClick={() => downloadJson("xapi-trace.json", traces)}>
               <Download aria-hidden className="h-4 w-4" />
-              导出 JSON
+              Export JSON
             </button>
           </div>
 
@@ -157,7 +157,7 @@ function TraceContent({ queryString }: { queryString: string }) {
                 <AlertTriangle aria-hidden className="h-4 w-4" />
                 {selectedTrace.source === "ai" ? "AI reasoning fallback / audit hold" : "xAPI call failed / audit hold"}
               </div>
-              <p className="mt-2 leading-6">该调用没有进入推理链，保留错误输出和零值 output hash 方便人工复核。</p>
+              <p className="mt-2 leading-6">This call did not enter the reasoning chain. Error output and zero-value output hash are retained for manual review.</p>
               <p className="mono mt-2" spellCheck={false}>
                 {selectedTrace.error}
               </p>
@@ -169,7 +169,7 @@ function TraceContent({ queryString }: { queryString: string }) {
               <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-blue-700 ring-1 ring-blue-100">{selectedTrace.source === "ai" ? "AI reasoning" : "schema-first call"}</span>
               <span className="font-semibold">{selectedTrace.source === "ai" ? `${selectedTrace.provider ?? "AI"} / ${selectedTrace.model ?? "model"} / ${selectedTrace.sourceMode ?? "fallback"}` : selectedTrace.schemaFetched ? "Schema discovery was completed before this call." : "Schema discovery missing or failed."}</span>
             </div>
-            <p className="mt-2 text-xs leading-5 text-blue-800">评委可复核 action contract、input hash 和 output hash，确认外部证据不是页面截图。</p>
+            <p className="mt-2 text-xs leading-5 text-blue-800">Operators can review the action contract, input hash, and output hash to verify that evidence is not just a page screenshot.</p>
           </div>
 
           <div className="mt-4 grid gap-4 lg:grid-cols-2">
@@ -213,7 +213,7 @@ function TraceContent({ queryString }: { queryString: string }) {
                 }}
               >
                 Headers
-                <span className="text-xs text-slate-500">{headersOpen ? "收起" : "展开"}</span>
+                <span className="text-xs text-slate-500">{headersOpen ? "Hide" : "Show"}</span>
               </button>
               {headersOpen ? (
                 <pre className="mono thin-scrollbar mt-3 overflow-auto rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs leading-5 text-slate-700" spellCheck={false}>
@@ -263,19 +263,20 @@ function getTraceTone(status: XApiTrace["status"]) {
 
 function RuntimeStatusBanner({ snapshot }: { snapshot: XApiRuntimeSnapshot }) {
   const isLive = snapshot.label === "live xAPI";
+  const displayLabel = snapshot.label === "mock fallback" ? "Fallback audit" : snapshot.label;
   const detail =
     snapshot.response?.error?.message ??
     {
-      connected: "服务端代理已连接真实 xAPI",
-      "no XAPI_KEY": "未配置服务端密钥，当前使用本地 mock trace 保持演示可用",
-      "upstream failed": "上游调用失败，当前使用 mock fallback 响应",
-      "checking xAPI": "正在检查服务端 xAPI 代理"
+      connected: "Server-side proxy is connected to live xAPI",
+      "no XAPI_KEY": "Server key is not configured; fallback traces keep the audit chain visible",
+      "upstream failed": "Upstream call failed; the current trace set uses fallback response data",
+      "checking xAPI": "Checking the server-side xAPI proxy"
     }[snapshot.reason as Exclude<XApiRuntimeSnapshot["reason"], "partial fallback">] ?? "partial fallback: mixed live/fallback xAPI evidence, inspect each Trace sourceMode";
 
   return (
     <div className={clsx("flex flex-col gap-2 rounded-lg border px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between", isLive ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-800")}>
       <div className="flex flex-wrap items-center gap-2">
-        <span className={clsx("rounded-full px-2.5 py-1 text-xs font-semibold ring-1", isLive ? "bg-white text-emerald-700 ring-emerald-100" : "bg-white text-amber-700 ring-amber-100")}>{snapshot.label}</span>
+        <span className={clsx("rounded-full px-2.5 py-1 text-xs font-semibold ring-1", isLive ? "bg-white text-emerald-700 ring-emerald-100" : "bg-white text-amber-700 ring-amber-100")}>{displayLabel}</span>
         <span className="font-semibold">{snapshot.reason}</span>
       </div>
       <p className="text-xs leading-5 sm:text-right">{detail}</p>

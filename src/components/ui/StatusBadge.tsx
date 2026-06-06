@@ -12,5 +12,12 @@ export function StatusBadge({ status }: { status: string }) {
             ? "bg-slate-100 text-slate-600 ring-slate-200"
             : "bg-red-50 text-red-700 ring-red-100";
 
-  return <span className={clsx("inline-flex rounded-full px-2.5 py-1 text-xs font-medium ring-1", cls)}>{status}</span>;
+  return <span className={clsx("inline-flex rounded-full px-2.5 py-1 text-xs font-medium ring-1", cls)}>{formatStatus(status)}</span>;
+}
+
+function formatStatus(status: string) {
+  if (status === "已完成") return "Completed";
+  if (status === "已上链") return "Attested";
+  if (status === "未上链") return "Pending proof";
+  return status;
 }

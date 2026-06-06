@@ -128,7 +128,7 @@ function ReportCenterContent({ initialFilters, initialDatePreset }: { initialFil
 
   return (
     <section className="space-y-5">
-      <PageHeading eyebrow="Reports" title="报告中心" description="按模式、风险分、结论、日期和关键词筛选持久化 Agent 报告与明确标注的 mock fallback 报告。" />
+      <PageHeading eyebrow="Reports" title="报告中心" description="按模式、风险分、结论、日期和关键词筛选持久化 Agent 报告，并明确区分 live、partial 与 fallback 来源。" />
       <div className="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_320px]">
         <div className={clsx(cardClass, "overflow-hidden")}>
           <div className="border-b border-slate-200 bg-white p-4">
@@ -146,7 +146,7 @@ function ReportCenterContent({ initialFilters, initialDatePreset }: { initialFil
               </div>
               <div className="flex flex-wrap gap-2">
                 <button className={buttonClass} type="button" onClick={() => applyQuickFilter("eth-demo")}>
-                  ETH demo
+                  ETH baseline
                 </button>
                 <button className={buttonClass} type="button" onClick={() => applyQuickFilter("needs-attestation")}>
                   Needs attestation
@@ -273,7 +273,7 @@ function ReportCenterContent({ initialFilters, initialDatePreset }: { initialFil
                     </span>
                   ))
                 ) : (
-                  <span className="text-xs text-slate-500">None, showing the full persistent + mock report set.</span>
+                  <span className="text-xs text-slate-500">None, showing the full persistent + fallback report set.</span>
                 )}
               </div>
             </div>
@@ -362,7 +362,7 @@ function ReportCenterContent({ initialFilters, initialDatePreset }: { initialFil
         </div>
 
         <aside className="space-y-4">
-          <StatCard icon={FileText} label="报告总数" value={`${reportItems.length}`} detail="persistent + mock data" tone="blue" />
+          <StatCard icon={FileText} label="报告总数" value={`${reportItems.length}`} detail="persistent + fallback data" tone="blue" />
           <StatCard icon={ShieldCheck} label="Proof coverage" value={`${reportItems.length ? Math.round((reportItems.filter((report) => report.status === "已上链").length / reportItems.length) * 100) : 0}%`} detail="已上链报告占比" tone="green" />
           <div className={clsx(cardClass, "p-4")}>
             <div className="flex items-center gap-2">
@@ -379,7 +379,7 @@ function ReportCenterContent({ initialFilters, initialDatePreset }: { initialFil
           <DistributionCard title="模式分布" rows={[["Risk Scan", 2], ["Alpha Scan", 1], ["DAO 尽调", 1]]} />
           <div className={clsx(cardClass, "p-4 text-sm text-slate-600")}>
             <h2 className="mb-2 font-semibold text-slate-950">数据说明</h2>
-            <p>报告列表合并展示持久化 Agent run 与显式 sourceMode=mock 的演示数据；审计时请优先查看每条报告、证据和 Trace 的 sourceMode。</p>
+            <p>报告列表合并展示持久化 Agent run 与显式 sourceMode 标记的 fallback 数据；审计时请优先查看每条报告、证据和 Trace 的 sourceMode。</p>
           </div>
         </aside>
       </div>
