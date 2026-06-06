@@ -1,4 +1,3 @@
-import { fallbackSearchActions } from "@/lib/server/xapi-normalize";
 import { createAiService } from "@/lib/server/ai-service";
 import { filterAllowedXApiActions } from "@/lib/server/api-guard";
 import type { AgentPlan, AiGenerateResult, AiProviderMode } from "@/lib/ai-types";
@@ -64,8 +63,7 @@ export async function planAgentTools({
 export function buildAvailableTools(context: WorkspaceRunContext, candidates: XApiActionSearchResult[] = [], providedTools: string[] = []) {
   const preferred = preferredActionsForContext(context);
   const searched = candidates.map((candidate) => candidate.action);
-  const fallback = fallbackSearchActions(normalizeTopicQuery(context.topic)).map((candidate) => candidate.action);
-  const unique = dedupe([...providedTools, ...preferred, ...searched, ...fallback]);
+  const unique = dedupe([...providedTools, ...preferred, ...searched]);
   const allowed = filterAllowedXApiActions(unique);
   return allowed.length > 0 ? allowed : ["twitter.search_timeline", "web.search.realtime", "crypto.token.price"];
 }

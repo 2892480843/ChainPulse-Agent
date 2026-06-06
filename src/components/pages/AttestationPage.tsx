@@ -1,13 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import clsx from "clsx";
-import { AlertTriangle, CalendarClock, Check, Download, ExternalLink, FileCheck2, Filter, Landmark, PackageCheck, ShieldCheck, Wallet } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Download, ExternalLink, FileCheck2, Loader2, Wallet } from "lucide-react";
 import {
   attestReportOnChain,
-  createMockAttestationRecord,
   getAttestationReadiness,
   prepareChainAttestation,
   readBrowserAttestationConfig,
@@ -17,104 +16,93 @@ import {
   type PreparedChainAttestation,
   type ProofVerificationResult
 } from "@/lib/adapters/attestation-client";
-import { fetchStoredReports, mergeReportsWithMock, saveReportAttestationRecord } from "@/lib/adapters/agent-data-client";
-import { attestation, reports } from "@/lib/mock-data";
+import { fetchStoredReports, saveReportAttestationRecord } from "@/lib/adapters/agent-data-client";
+import { shortAddress, type WalletConnection } from "@/lib/adapters/wallet-client";
 import type { Report, ReportAttestation } from "@/lib/types";
 import { useAppActions } from "@/components/shell/AppShell";
-import { CopyButton } from "@/components/ui/CopyButton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { HashRow } from "@/components/ui/HashRow";
 import { ModeBadge } from "@/components/ui/ModeBadge";
 import { PageHeading } from "@/components/ui/PageHeading";
-import { ProofChain } from "@/components/ui/ProofChain";
-import { buttonClass, cardClass, inputClass, primaryButtonClass, selectedButtonClass } from "@/components/ui/styles";
+import { StatusBadge } from "@/components/ui/StatusBadge";
+import { TokenIcon } from "@/components/ui/TokenIcon";
+import { buttonClass, cardClass, inputClass, primaryButtonClass } from "@/components/ui/styles";
 
-const proofHistoryDatePresets = [
-  { key: "all", label: "All" },
-  { key: "today", label: "Today" },
-  { key: "7d", label: "Last 7 days" },
-  { key: "30d", label: "Last 30 days" },
-  { key: "custom", label: "Custom" }
-] as const;
-
-type ProofHistoryDatePreset = (typeof proofHistoryDatePresets)[number]["key"];
-type ProofStatusFilter = "All" | "Attested" | "Pending";
-
-interface ProofHistoryFilters {
-  query: string;
-  mode: "All" | Report["mode"];
-  status: ProofStatusFilter;
-  startDate: string;
-  endDate: string;
-}
-
-const defaultProofHistoryFilters: ProofHistoryFilters = {
-  query: "",
-  mode: "All",
-  status: "All",
-  startDate: "",
-  endDate: ""
-};
+type AttestationPhase = "idle" | "submitting" | "saving" | "saved" | "failed";
+type BackendSyncState = "pending" | "synced" | "failed";
 
 export function AttestationPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { copiedKey, copyText, downloadJson, notify } = useAppActions();
-  const [reportItems, setReportItems] = useState<Report[]>(reports);
-  const [record, setRecord] = useState<AttestationRecord>(attestation);
+  const { connectWallet, copiedKey, copyText, downloadJson, language, notify, walletConnected, walletConnection } = useAppActions();
+  const copy = attestationCopy[language];
+  const [reportItems, setReportItems] = useState<Report[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [record, setRecord] = useState<AttestationRecord | null>(null);
   const [localVerification, setLocalVerification] = useState<ProofVerificationResult | null>(null);
-  const [historyFilters, setHistoryFilterState] = useState(defaultProofHistoryFilters);
-  const [datePreset, setDatePreset] = useState<ProofHistoryDatePreset>("all");
   const [config, setConfig] = useState(() => readAttestationConfig());
   const [preparedAttestation, setPreparedAttestation] = useState<PreparedChainAttestation | null>(null);
+  const [attestationPhase, setAttestationPhase] = useState<AttestationPhase>("idle");
+  const [backendSyncState, setBackendSyncState] = useState<BackendSyncState>("pending");
+
   const readiness = useMemo(() => getAttestationReadiness(config), [config]);
-  const selectedReportId = searchParams.get("report") ?? reports[0].id;
-  const selectedReport = useMemo(() => reportItems.find((report) => report.id === selectedReportId) ?? reportItems[0] ?? reports[0], [reportItems, selectedReportId]);
-  const filteredProofReports = useMemo(() => filterProofHistory(reportItems, historyFilters), [historyFilters, reportItems]);
-  const chainVerified = record.onChainVerification?.status === "confirmed";
-  const steps = [
-    "Report generated",
-    "Hashes generated",
-    "SignalAttestation ABI",
-    readiness.canWrite ? "Wallet can sign" : "Waiting for wallet/contract",
-    readiness.canWrite ? "Transaction ready" : "Real write disabled",
-    chainVerified ? "On-chain readback verified" : record.txHash.startsWith("0x") ? "Waiting for readback" : "Waiting for confirmation"
-  ];
+  const selectedReportId = searchParams.get("report");
+  const selectedReport = useMemo(() => reportItems.find((report) => report.id === selectedReportId) ?? reportItems[0] ?? null, [reportItems, selectedReportId]);
+  const isAttesting = attestationPhase === "submitting" || attestationPhase === "saving";
+  const canWriteWithWallet = Boolean(selectedReport) && readiness.canWrite && walletConnected && !isAttesting;
+  const walletStatusLabel = getWalletStatusLabel(walletConnection, copy);
+  const selectedAttestation = selectedReport?.attestation ? recordFromReport(selectedReport) : null;
+  const activeRecord = record ?? selectedAttestation;
+  const chainVerified = activeRecord?.onChainVerification?.status === "confirmed" || selectedReport?.attestation?.onChainStatus === "confirmed";
 
   useEffect(() => {
     let cancelled = false;
+    setLoading(true);
+    setLoadError("");
     fetchStoredReports()
       .then((items) => {
-        if (!cancelled) setReportItems(mergeReportsWithMock(items));
+        if (!cancelled) setReportItems(items);
       })
-      .catch(() => {
-        if (!cancelled) setReportItems(mergeReportsWithMock([]));
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setReportItems([]);
+          setLoadError(error instanceof Error ? error.message : copy.loadFailed);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
       });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [copy.loadFailed]);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setConfig(readBrowserAttestationConfig());
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
+  }, [walletConnection.chainId, walletConnection.status]);
 
   useEffect(() => {
     let cancelled = false;
-    createMockAttestationRecord(selectedReport)
-      .then((result) => {
-        if (!cancelled) setRecord(result);
-      })
-      .catch(() => notify("Fallback receipt adapter failed"));
-    verifyProofBundle(selectedReport, selectedReport.evidence, recordFromReport(selectedReport) ?? selectedReport).then((result) => {
-      if (!cancelled) setLocalVerification(result);
-    });
-    window.setTimeout(() => {
-      if (!cancelled) setConfig(readBrowserAttestationConfig());
-    }, 0);
-    return () => {
+    setPreparedAttestation(null);
+    setLocalVerification(null);
+    setRecord(selectedReport ? recordFromReport(selectedReport) : null);
+    setBackendSyncState(selectedReport?.attestation ? "synced" : "pending");
+
+    if (!selectedReport) return () => {
       cancelled = true;
     };
-  }, [notify, selectedReport]);
 
-  useEffect(() => {
-    let cancelled = false;
+    verifyProofBundle(selectedReport, selectedReport.evidence, {
+      reportHash: selectedReport.attestation?.reportHash ?? selectedReport.reportHash,
+      evidenceHash: selectedReport.attestation?.evidenceHash ?? selectedReport.evidenceHash
+    }).then((result) => {
+      if (!cancelled) setLocalVerification(result);
+    });
+
     prepareChainAttestation(selectedReport, selectedReport.evidence, config)
       .then((result) => {
         if (!cancelled) setPreparedAttestation(result);
@@ -122,544 +110,260 @@ export function AttestationPage() {
       .catch(() => {
         if (!cancelled) setPreparedAttestation(null);
       });
+
     return () => {
       cancelled = true;
     };
   }, [config, selectedReport]);
 
+  function changeReport(reportId: string) {
+    router.push(`/attestation?report=${encodeURIComponent(reportId)}`);
+  }
+
   function openExplorer() {
-    if (!config.explorerBaseUrl) {
-      notify("Explorer is not configured");
+    if (!activeRecord?.txHash?.startsWith("0x") || !config.explorerBaseUrl) {
+      notify(copy.explorerMissing);
       return;
     }
-    window.open(record.explorerTxUrl ?? `${config.explorerBaseUrl}/tx/${record.txHash}`, "_blank", "noopener,noreferrer");
-    notify("Explorer link opened");
+    window.open(activeRecord.explorerTxUrl ?? `${config.explorerBaseUrl}/tx/${activeRecord.txHash}`, "_blank", "noopener,noreferrer");
   }
 
   async function attestOnChain() {
-    const ethereum = (window as Window & { ethereum?: { request(args: { method: string; params?: unknown[] }): Promise<unknown> } }).ethereum;
-    if (!ethereum) {
-      notify("Browser wallet is not available");
-      return;
-    }
+    if (!selectedReport) return;
+    const activeWallet = walletConnection.status === "connected" ? walletConnection : await connectWallet();
+    if (activeWallet.status !== "connected") return;
 
     try {
-      const accounts = (await ethereum.request({ method: "eth_requestAccounts" })) as string[];
-      const walletAddress = accounts[0];
-      if (!walletAddress) {
-        notify("Wallet did not return an address");
-        return;
-      }
-      const nextRecord = await attestReportOnChain(selectedReport, walletAddress);
+      setAttestationPhase("submitting");
+      setBackendSyncState("pending");
+      const nextRecord = await attestReportOnChain(selectedReport, activeWallet.address);
       setRecord(nextRecord);
+      setAttestationPhase("saving");
+
       const savedReport = await saveReportAttestationRecord(selectedReport.id, toReportAttestation(nextRecord));
       if (savedReport) {
         setReportItems((currentItems) => currentItems.map((report) => (report.id === savedReport.id ? savedReport : report)));
+        setBackendSyncState("synced");
+      } else {
+        setBackendSyncState("failed");
       }
-      notify(nextRecord.onChainVerification?.status === "confirmed" ? "On-chain write and readback verified" : "Transaction submitted, readback verification is not fully matched");
+      setAttestationPhase("saved");
+      notify(nextRecord.onChainVerification?.status === "confirmed" ? copy.writeVerified : copy.writeSubmitted);
     } catch (error) {
-      notify(error instanceof Error ? error.message : "Real on-chain transaction failed");
+      setAttestationPhase("failed");
+      setBackendSyncState("failed");
+      notify(error instanceof Error ? error.message : copy.writeFailed);
     }
   }
 
-  function setHistoryFilters(nextFilters: ProofHistoryFilters | ((currentFilters: ProofHistoryFilters) => ProofHistoryFilters), nextDatePreset = datePreset) {
-    setHistoryFilterState((currentFilters) => (typeof nextFilters === "function" ? nextFilters(currentFilters) : nextFilters));
-    setDatePreset(nextDatePreset);
+  if (loading) {
+    return (
+      <section className="space-y-5">
+        <PageHeading eyebrow={copy.eyebrow} title={copy.title} description={copy.description} />
+        <div className={cardClass}>
+          <EmptyState title={copy.loading} detail={copy.loadingDetail} />
+        </div>
+      </section>
+    );
   }
 
-  function updateDatePreset(nextDatePreset: ProofHistoryDatePreset) {
-    if (nextDatePreset === "custom") {
-      setHistoryFilters((currentFilters) => currentFilters, "custom");
-      return;
-    }
-
-    setHistoryFilters((currentFilters) => ({ ...currentFilters, ...getProofDateRangeForPreset(nextDatePreset, reportItems) }), nextDatePreset);
-  }
-
-  function updateCustomDate(key: "startDate" | "endDate", value: string) {
-    setHistoryFilters((currentFilters) => ({ ...currentFilters, [key]: value }), "custom");
-  }
-
-  function clearCustomDateRange() {
-    setHistoryFilters((currentFilters) => ({ ...currentFilters, startDate: "", endDate: "" }), "custom");
+  if (!selectedReport) {
+    return (
+      <section className="space-y-5">
+        <PageHeading eyebrow={copy.eyebrow} title={copy.title} description={copy.description} />
+        {loadError ? <Notice tone="red" title={copy.loadFailed} detail={loadError} /> : null}
+        <div className={cardClass}>
+          <EmptyState title={copy.noReports} detail={copy.noReportsDetail} />
+        </div>
+        <Link className={primaryButtonClass} href="/workspace">
+          {copy.goWorkspace}
+        </Link>
+      </section>
+    );
   }
 
   return (
     <section className="space-y-5">
-      <PageHeading eyebrow="On-chain proof" title="Proof Receipts" description="Review report hash, evidence hash, calldata, transaction state, and local verification for each Agent report. Fallback receipts remain explicit and are never presented as live transactions." />
+      <PageHeading eyebrow={copy.eyebrow} title={copy.title} description={copy.description} />
 
       <div className="grid gap-3 md:grid-cols-3">
-        <ReadinessCard label="Live ready" active={readiness.state === "live ready"} detail={readiness.state === "live ready" ? "contract + explorer + wallet ready" : "requires contract, explorer, and browser wallet"} />
-        <ReadinessCard label="Fallback receipt" active={readiness.state === "mock fallback" || readiness.state === "not configured"} detail="local receipt remains explicit and reviewable" />
-        <ReadinessCard label="Not configured" active={readiness.state === "not configured"} detail="no contract address means no fake on-chain write" />
+        <RuntimeStatus label={copy.walletStatus} value={walletStatusLabel} tone={walletConnected ? "green" : "orange"} />
+        <RuntimeStatus label={copy.contractStatus} value={readiness.state} tone={readiness.state === "live ready" ? "green" : readiness.state === "not configured" ? "red" : "orange"} />
+        <RuntimeStatus label={copy.backendStatus} value={backendSyncState} tone={backendSyncState === "synced" ? "green" : backendSyncState === "failed" ? "red" : "orange"} />
       </div>
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className={clsx(cardClass, "p-4 sm:p-5")}>
-          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="grid h-9 w-9 place-items-center rounded-lg bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100">
-                  <FileCheck2 aria-hidden className="h-4 w-4" />
-                </span>
-                <div>
-                  <h2 className="text-lg font-semibold text-slate-950">Receipt summary</h2>
-                  <p className="mt-1 text-xs text-slate-500">{selectedReport.title} / source: {selectedReport.sourceMode ?? "mock"} / {readiness.state === "live ready" ? "live write path" : "fallback receipt"}</p>
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0">
+              <div className="flex items-start gap-3">
+                <TokenIcon symbol={selectedReport.topic} />
+                <div className="min-w-0">
+                  <h2 className="text-lg font-semibold text-slate-950">{selectedReport.title}</h2>
+                  <p className="mt-1 text-sm leading-6 text-slate-600">{selectedReport.summary}</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <ModeBadge mode={selectedReport.mode} />
+                    <StatusBadge status={selectedReport.status} />
+                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
+                      {selectedReport.sourceMode ?? "live"}
+                    </span>
+                  </div>
                 </div>
               </div>
-              <label className="mt-3 grid max-w-xl gap-1 text-xs font-medium text-slate-600">
-                Report
-                <select
-                  className={inputClass}
-                  value={selectedReport.id}
-                  onChange={(event) => router.push(`/attestation?report=${encodeURIComponent(event.target.value)}`)}
-                >
+
+              <label className="mt-4 grid max-w-xl gap-1 text-xs font-medium text-slate-600">
+                {copy.report}
+                <select className={inputClass} value={selectedReport.id} onChange={(event) => changeReport(event.target.value)}>
                   {reportItems.map((report) => (
                     <option key={report.id} value={report.id}>
-                      Select: {report.title}
+                      {report.title}
                     </option>
                   ))}
                 </select>
               </label>
             </div>
+
             <div className="flex flex-wrap gap-2">
-              <button className={buttonClass} type="button" onClick={openExplorer} disabled={!config.explorerConfigured || !record.txHash.startsWith("0x")}>
-                <ExternalLink aria-hidden className="h-4 w-4" />
-                Open Explorer Tx
-              </button>
-              <button className={primaryButtonClass} type="button" onClick={attestOnChain} disabled={!readiness.canWrite} title={readiness.canWrite ? "Open wallet transaction" : `Missing: ${readiness.missing.join(", ")}`}>
+              <button className={buttonClass} type="button" onClick={connectWallet} disabled={isAttesting}>
                 <Wallet aria-hidden className="h-4 w-4" />
-                Write real attestation
+                {walletConnected ? copy.walletConnected : copy.connectWallet}
               </button>
-              <button className={primaryButtonClass} type="button" onClick={() => downloadJson("attestation-receipt.json", record)}>
-                <Download aria-hidden className="h-4 w-4" />
-                Download Receipt JSON
+              <button className={primaryButtonClass} type="button" onClick={attestOnChain} disabled={!canWriteWithWallet} title={canWriteWithWallet ? copy.openWalletTx : `${copy.missing}: ${readiness.missing.join(", ") || copy.walletRequired}`}>
+                {isAttesting ? <Loader2 aria-hidden className="h-4 w-4 animate-spin" /> : <Wallet aria-hidden className="h-4 w-4" />}
+                {isAttesting ? copy.writing : copy.write}
               </button>
             </div>
-          </div>
-
-          <div className="mt-4 grid gap-3 lg:grid-cols-3">
-            <HashRow label="Report Hash" value={record.reportHash} onCopy={copyText} copiedKey={copiedKey} />
-            <HashRow label="Evidence Hash" value={record.evidenceHash} onCopy={copyText} copiedKey={copiedKey} />
-            <HashRow label="Tx Hash" value={record.txHash} onCopy={copyText} copiedKey={copiedKey} />
-          </div>
-
-          <div className="mt-4 grid gap-3 md:grid-cols-3">
-            <ReceiptFact icon={Landmark} label="Block" value={record.block} />
-            <ReceiptFact icon={CalendarClock} label="Timestamp" value={record.timestamp} />
-            <ReceiptFact icon={Wallet} label="Wallet" value={record.walletAddress} />
-          </div>
-
-          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-7">
-            <LocalVerifyFact label="Report Hash match" passed={Boolean(localVerification?.reportHashMatch)} value={localVerification ? (localVerification.reportHashMatch ? "match" : "mismatch") : "checking"} />
-            <LocalVerifyFact label="Evidence Hash match" passed={Boolean(localVerification?.evidenceHashMatch)} value={localVerification ? (localVerification.evidenceHashMatch ? "match" : "mismatch") : "checking"} />
-            <LocalVerifyFact label="Explorer configured" passed={config.explorerConfigured} value={config.explorerConfigured ? "configured" : "missing"} />
-            <LocalVerifyFact label="Contract configured" passed={config.contractConfigured} value={config.contractConfigured ? "configured" : "missing"} />
-            <LocalVerifyFact label="Wallet mode" passed={config.walletMode === "browser wallet detected"} value={config.walletMode} />
-            <LocalVerifyFact label="ABI" passed value="SignalAttestation" />
-            <LocalVerifyFact label="Calldata" passed={Boolean(preparedAttestation)} value={preparedAttestation ? shortValue(preparedAttestation.data) : "waiting"} />
-          </div>
-
-          <div className="mt-4 grid gap-3 md:grid-cols-3">
-            <LocalVerifyFact label="Receipt + event" passed={Boolean(record.onChainVerification?.eventMatched)} value={record.onChainVerification ? (record.onChainVerification.eventMatched ? "matched" : "mismatch") : "waiting"} />
-            <LocalVerifyFact label="Storage readback" passed={chainVerified} value={record.onChainVerification?.status ?? "waiting"} />
-            <LocalVerifyFact label="On-chain reportId" passed={Boolean(record.reportId)} value={record.reportId ?? "waiting"} />
           </div>
 
           {!readiness.canWrite ? (
-            <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-800">
-              <div className="flex items-center gap-2 font-semibold">
-                <AlertTriangle aria-hidden className="h-4 w-4" />
-                Real chain write disabled
-              </div>
-              <p className="mt-1 text-xs leading-5">Missing {readiness.missing.join(", ") || "required chain readiness"}. The page only shows an explicit fallback receipt and does not fabricate a live transaction.</p>
-            </div>
+            <Notice tone="orange" title={copy.realDisabled} detail={`${copy.realDisabledDetail} ${copy.missing}: ${readiness.missing.join(", ") || copy.requiredChain}.`} />
           ) : null}
 
-          <div className="mt-4 grid gap-2 md:grid-cols-5">
-            {steps.map((step) => (
-              <div key={step} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+          <div className="mt-5 grid gap-3 lg:grid-cols-2">
+            <HashRow label="Report Hash" value={selectedReport.reportHash} onCopy={copyText} copiedKey={copiedKey} />
+            <HashRow label="Evidence Hash" value={selectedReport.evidenceHash} onCopy={copyText} copiedKey={copiedKey} />
+          </div>
+
+          <div className="mt-5 grid gap-3 md:grid-cols-3">
+            <VerifyFact label={copy.hashCheck} value={localVerification ? (localVerification.reportHashMatch && localVerification.evidenceHashMatch ? copy.match : copy.mismatch) : copy.checking} passed={Boolean(localVerification?.reportHashMatch && localVerification.evidenceHashMatch)} />
+            <VerifyFact label={copy.payload} value={preparedAttestation ? shortValue(preparedAttestation.data) : copy.waiting} passed={Boolean(preparedAttestation)} />
+            <VerifyFact label={copy.readback} value={activeRecord?.onChainVerification?.status ?? (activeRecord ? copy.pending : copy.notSubmitted)} passed={Boolean(chainVerified)} />
+          </div>
+
+          {activeRecord ? (
+            <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4">
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                 <div className="flex items-center gap-2">
-                  <span className="grid h-5 w-5 place-items-center rounded-full bg-emerald-500 text-white">
-                    <Check aria-hidden className="h-3 w-3" />
-                  </span>
-                  <span className="text-xs font-medium text-slate-800">{step}</span>
+                  <FileCheck2 aria-hidden className="h-4 w-4 text-emerald-700" />
+                  <h3 className="text-sm font-semibold text-slate-950">{copy.savedReceipt}</h3>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button className={buttonClass} type="button" onClick={openExplorer} disabled={!activeRecord.txHash.startsWith("0x") || !config.explorerConfigured}>
+                    <ExternalLink aria-hidden className="h-4 w-4" />
+                    {copy.openExplorer}
+                  </button>
+                  <button className={buttonClass} type="button" onClick={() => downloadJson("attestation-receipt.json", activeRecord)}>
+                    <Download aria-hidden className="h-4 w-4" />
+                    {copy.downloadReceipt}
+                  </button>
                 </div>
               </div>
-            ))}
-          </div>
-
-          <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
-            <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-              <div>
-                <h3 className="text-sm font-semibold text-slate-950">Sepolia contract payload</h3>
-                <p className="mt-1 text-xs leading-5 text-slate-500">Full ABI payload writes report/evidence hash, topic, riskScore, alphaScore, verdict, and metadataURI.</p>
+              <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                <HashRow label="Tx Hash" value={activeRecord.txHash} onCopy={copyText} copiedKey={copiedKey} />
+                <ReceiptFact label={copy.wallet} value={activeRecord.walletAddress} />
+                <ReceiptFact label={copy.block} value={activeRecord.block} />
+                <ReceiptFact label={copy.reportId} value={activeRecord.reportId ?? copy.pending} />
               </div>
-              <span className="w-fit rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 ring-1 ring-slate-200">attest(bytes32,bytes32,string,uint8,uint8,string,string)</span>
             </div>
-            <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
-              <PayloadFact label="Contract" value={preparedAttestation?.to ?? config.contractAddress ?? "missing"} />
-              <PayloadFact label="Chain" value={preparedAttestation?.chainId ? `Sepolia ${preparedAttestation.chainId}` : "Sepolia 11155111"} />
-              <PayloadFact label="Metadata URI" value={preparedAttestation?.metadataURI ?? "waiting"} />
-              <PayloadFact label="Calldata" value={preparedAttestation?.data ? shortValue(preparedAttestation.data) : "waiting"} />
-            </div>
-          </div>
+          ) : null}
         </div>
 
-        <aside className="grid gap-4">
-          <ProofExplainer
-            title="Why on-chain?"
-            detail="The receipt proves that the report and evidence packet existed at this point in time and were not silently rewritten later."
-            bullets={["timestamp proof", "tamper evidence", "shared review record"]}
-          />
+        <aside className="space-y-4">
           <div className={clsx(cardClass, "p-4")}>
-            <h2 className="text-sm font-semibold text-slate-950">Verify locally</h2>
-            <p className="mt-2 text-sm leading-6 text-slate-600">Recompute the report JSON and evidence packet hash, then compare them with the receipt values.</p>
-            <div className="mt-3 grid gap-2">
-              <ProofCheckLine label="Report JSON" passed={Boolean(localVerification?.reportHashMatch)} />
-              <ProofCheckLine label="Evidence packet" passed={Boolean(localVerification?.evidenceHashMatch)} />
+            <h2 className="text-sm font-semibold text-slate-950">{copy.flowTitle}</h2>
+            <div className="mt-3 grid gap-2 text-sm">
+              <FlowStep done label={copy.flowReport} />
+              <FlowStep done={Boolean(localVerification?.reportHashMatch && localVerification.evidenceHashMatch)} label={copy.flowHash} />
+              <FlowStep done={readiness.canWrite} label={copy.flowContract} />
+              <FlowStep done={walletConnected} label={copy.flowWallet} />
+              <FlowStep done={Boolean(chainVerified)} label={copy.flowReadback} />
             </div>
-            <button
-              className={clsx(buttonClass, "mt-3")}
-              type="button"
-              onClick={() =>
-                downloadJson("chainpulse-proof-bundle.json", {
-                  report: selectedReport,
-                  evidence: selectedReport.evidence,
-                  reportHash: record.reportHash,
-                  evidenceHash: record.evidenceHash,
-                  txHash: record.txHash,
-                  onChainVerification: record.onChainVerification ?? null,
-                  localVerification,
-                  preparedAttestation: preparedAttestation
-                    ? {
-                        to: preparedAttestation.to,
-                        chainId: preparedAttestation.chainId,
-                        metadataURI: preparedAttestation.metadataURI,
-                        functionSignature: preparedAttestation.functionSignature,
-                        calldata: preparedAttestation.data,
-                        explorerAddressUrl: preparedAttestation.explorerAddressUrl
-                      }
-                    : null,
-                  chainConfig: {
-                    chainId: config.chainId,
-                    contractAddress: config.contractAddress,
-                    explorerBaseUrl: config.explorerBaseUrl,
-                    readiness: readiness.state,
-                    sourceVerification: "run npm run sepolia:verify with ETHERSCAN_API_KEY"
-                  }
-                })
-              }
-            >
+          </div>
+
+          <div className={clsx(cardClass, "p-4")}>
+            <h2 className="text-sm font-semibold text-slate-950">{copy.auditTitle}</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600">{copy.auditDetail}</p>
+            <button className={buttonClass} type="button" onClick={() => downloadJson(`${selectedReport.id}-proof-bundle.json`, createProofBundle(selectedReport, activeRecord, preparedAttestation, config))}>
               <Download aria-hidden className="h-4 w-4" />
-              Download Proof Bundle
+              {copy.downloadBundle}
             </button>
           </div>
-          <div className={clsx(cardClass, "p-4")}>
-            <h2 className="text-sm font-semibold text-slate-950">Proof review panel</h2>
-            <p className="mt-2 text-sm leading-6 text-slate-600">Fast review path: download the raw report JSON and evidence packet, recompute SHA-256 locally, write only hashes on-chain, and keep real writes disabled until configuration is complete.</p>
-            <div className="mt-3 grid gap-2 text-xs text-slate-600">
-              <span>1. Hashes are recomputed locally, not typed by hand.</span>
-              <span>2. Evidence links back to xAPI trace actions.</span>
-              <span>3. Live write path is disabled until real config exists.</span>
-            </div>
-          </div>
         </aside>
-      </div>
-
-      <ProofChain
-        topic={selectedReport.topic}
-        mode={selectedReport.mode}
-        actions={selectedReport.evidence.map((item) => item.source.replace("xapi:", ""))}
-        evidenceCount={selectedReport.evidence.length}
-        reportHash={record.reportHash}
-        evidenceHash={record.evidenceHash}
-        txHash={record.txHash}
-        attested
-        compact
-      />
-
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
-        <div className={clsx(cardClass, "p-4")}>
-          <div className="flex items-center gap-2">
-            <PackageCheck aria-hidden className="h-4 w-4 text-slate-500" />
-            <h2 className="text-sm font-semibold text-slate-950">Evidence packet overview</h2>
-          </div>
-          <div className="mt-3 grid gap-3">
-            {selectedReport.evidence.map((item) => (
-              <div key={item.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-sm font-medium text-slate-900">{item.title}</p>
-                  <span className="mono rounded-full bg-white px-2 py-1 text-[11px] text-slate-500 ring-1 ring-slate-200">{item.source}</span>
-                </div>
-                <p className="mt-2 text-xs leading-5 text-slate-600">{item.summary}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className={clsx(cardClass, "overflow-hidden")}>
-          <div className="border-b border-slate-200 bg-white p-4">
-            <div className="flex items-start gap-2">
-              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-blue-50 text-blue-700 ring-1 ring-blue-100">
-                <Filter aria-hidden className="h-4 w-4" />
-              </span>
-              <div className="min-w-0">
-                <h2 className="text-sm font-semibold text-slate-950">Proof history</h2>
-                <p className="mt-0.5 text-xs text-slate-500">Filter proof records by mode, status, date, and keyword.</p>
-              </div>
-            </div>
-
-            <div className="mt-4 grid gap-3 lg:grid-cols-12">
-              <label className="grid gap-1 lg:col-span-4">
-                <span className="text-xs font-medium text-slate-600">Search proofs</span>
-                <input
-                  type="search"
-                  name="proof-search"
-                  className={inputClass}
-                  value={historyFilters.query}
-                  onChange={(event) => setHistoryFilters((currentFilters) => ({ ...currentFilters, query: event.target.value }))}
-                  placeholder="Title, topic, hash..."
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-              </label>
-
-              <label className="grid gap-1 lg:col-span-3">
-                <span className="text-xs font-medium text-slate-600">Mode</span>
-                <select name="proof-mode" className={inputClass} value={historyFilters.mode} autoComplete="off" onChange={(event) => setHistoryFilters((currentFilters) => ({ ...currentFilters, mode: event.target.value as ProofHistoryFilters["mode"] }))}>
-                  <option>All</option>
-                  <option>Alpha Scan</option>
-                  <option>Risk Scan</option>
-                  <option>DAO 尽调</option>
-                </select>
-              </label>
-              <label className="grid gap-1 lg:col-span-3">
-                <span className="text-xs font-medium text-slate-600">Proof status</span>
-                <select name="proof-status" className={inputClass} value={historyFilters.status} autoComplete="off" onChange={(event) => setHistoryFilters((currentFilters) => ({ ...currentFilters, status: event.target.value as ProofStatusFilter }))}>
-                  <option>All</option>
-                  <option>Attested</option>
-                  <option>Pending</option>
-                </select>
-              </label>
-
-              <fieldset className="grid gap-2 lg:col-span-12">
-                <legend className="text-xs font-medium text-slate-600">Proof date range</legend>
-                <div className="flex flex-wrap items-center gap-2">
-                  {proofHistoryDatePresets.map((option) => (
-                    <button
-                      key={option.key}
-                      className={clsx(
-                        "inline-flex h-9 items-center justify-center rounded-lg border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-100 active:scale-[0.98]",
-                        datePreset === option.key ? selectedButtonClass : "border-slate-200 bg-white text-slate-700 hover:border-blue-200 hover:bg-blue-50"
-                      )}
-                      type="button"
-                      aria-pressed={datePreset === option.key}
-                      onClick={() => updateDatePreset(option.key)}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                  {datePreset !== "custom" ? <span className="text-xs text-slate-500">{formatProofDateRangeHint(historyFilters)}</span> : null}
-                </div>
-                {datePreset === "custom" ? (
-                  <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
-                    <label className="grid gap-1">
-                      <span className="text-xs font-medium text-slate-600">Start date</span>
-                      <input className={inputClass} name="proof-start-date" type="date" value={historyFilters.startDate} autoComplete="off" onChange={(event) => updateCustomDate("startDate", event.target.value)} />
-                    </label>
-                    <label className="grid gap-1">
-                      <span className="text-xs font-medium text-slate-600">End date</span>
-                      <input className={inputClass} name="proof-end-date" type="date" value={historyFilters.endDate} autoComplete="off" onChange={(event) => updateCustomDate("endDate", event.target.value)} />
-                    </label>
-                    <button className={buttonClass} type="button" onClick={clearCustomDateRange}>
-                      Clear dates
-                    </button>
-                  </div>
-                ) : null}
-              </fieldset>
-
-              <span className="w-fit rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700 lg:col-span-12">
-                Showing {filteredProofReports.length} of {reportItems.length} proof records
-              </span>
-            </div>
-          </div>
-
-          <div className="divide-y divide-slate-100">
-            {filteredProofReports.map((report) => (
-              <ProofHistoryRow key={report.id} report={report} txHash={record.txHash} copiedKey={copiedKey} copyText={copyText} />
-            ))}
-          </div>
-          {filteredProofReports.length === 0 ? <EmptyState title="No proof records matched" detail="Adjust keyword, date, mode, or proof status and try again." /> : null}
-        </div>
       </div>
     </section>
   );
 }
 
-function ReceiptFact({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: string }) {
+function RuntimeStatus({ label, value, tone }: { label: string; value: string; tone: "green" | "orange" | "red" }) {
+  const toneClass = {
+    green: "border-emerald-200 bg-emerald-50 text-emerald-800",
+    orange: "border-amber-200 bg-amber-50 text-amber-800",
+    red: "border-red-200 bg-red-50 text-red-800"
+  }[tone];
+
   return (
-    <div className="min-w-0 rounded-lg border border-slate-200 bg-slate-50 p-3">
-      <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
-        <Icon aria-hidden className="h-4 w-4 text-slate-400" />
-        {label}
+    <div className={clsx("min-w-0 rounded-lg border px-3 py-2", toneClass)}>
+      <p className="text-[11px] font-semibold uppercase opacity-80">{label}</p>
+      <p className="mt-1 truncate text-xs font-semibold">{value}</p>
+    </div>
+  );
+}
+
+function Notice({ tone, title, detail }: { tone: "orange" | "red"; title: string; detail: string }) {
+  const toneClass = tone === "red" ? "border-red-200 bg-red-50 text-red-800" : "border-amber-200 bg-amber-50 text-amber-800";
+
+  return (
+    <div className={clsx("mt-4 rounded-lg border px-3 py-3 text-sm", toneClass)}>
+      <div className="flex items-center gap-2 font-semibold">
+        <AlertTriangle aria-hidden className="h-4 w-4" />
+        {title}
       </div>
-      <p className="mono mt-2 min-w-0 truncate text-sm text-slate-900" spellCheck={false}>
-        {value}
-      </p>
+      <p className="mt-1 text-xs leading-5">{detail}</p>
     </div>
   );
 }
 
-function PayloadFact({ label, value }: { label: string; value: string }) {
+function VerifyFact({ label, value, passed }: { label: string; value: string; passed: boolean }) {
   return (
-    <div className="min-w-0 rounded-lg border border-slate-200 bg-white px-3 py-2">
-      <p className="text-[11px] font-semibold uppercase text-slate-500">{label}</p>
-      <p className="mono mt-1 truncate text-xs text-slate-800" spellCheck={false}>
-        {value}
-      </p>
-    </div>
-  );
-}
-
-function ReadinessCard({ label, active, detail }: { label: string; active: boolean; detail: string }) {
-  return (
-    <div className={clsx("rounded-lg border p-3", active ? "border-emerald-200 bg-emerald-50" : "border-slate-200 bg-white")}>
-      <p className={clsx("text-sm font-semibold", active ? "text-emerald-800" : "text-slate-900")}>{label}</p>
-      <p className="mt-1 text-xs leading-5 text-slate-600">{detail}</p>
-    </div>
-  );
-}
-
-function LocalVerifyFact({ label, value, passed }: { label: string; value: string; passed: boolean }) {
-  return (
-    <div className={clsx("rounded-lg border p-3", passed ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50")}>
+    <div className={clsx("min-w-0 rounded-lg border p-3", passed ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50")}>
       <p className={clsx("text-xs font-semibold uppercase", passed ? "text-emerald-700" : "text-amber-700")}>{label}</p>
-      <p className="mt-2 text-xs font-semibold text-slate-950">{value}</p>
-    </div>
-  );
-}
-
-function ProofCheckLine({ label, passed }: { label: string; passed: boolean }) {
-  return (
-    <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-      <span className="text-xs font-medium text-slate-600">{label}</span>
-      <span className={clsx("rounded-full px-2 py-1 text-[11px] font-semibold ring-1", passed ? "bg-emerald-50 text-emerald-700 ring-emerald-100" : "bg-amber-50 text-amber-700 ring-amber-100")}>{passed ? "match" : "checking"}</span>
-    </div>
-  );
-}
-
-function ProofExplainer({ title, detail, bullets }: { title: string; detail: string; bullets: string[] }) {
-  return (
-    <div className={clsx(cardClass, "p-4")}>
-      <h2 className="text-sm font-semibold text-slate-950">{title}</h2>
-      <p className="mt-2 text-sm leading-6 text-slate-600">{detail}</p>
-      <div className="mt-3 flex flex-wrap gap-2">
-        {bullets.map((item) => (
-          <span key={item} className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
-            {item}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function ProofHistoryRow({
-  report,
-  txHash,
-  copiedKey,
-  copyText
-}: {
-  report: Report;
-  txHash: string;
-  copiedKey: string;
-  copyText: (text: string, label: string) => Promise<void>;
-}) {
-  const proofStatus = getProofStatus(report);
-  const txValue = proofStatus === "Attested" ? txHash : "pending";
-
-  return (
-    <div className="p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="font-semibold text-slate-900">{report.title}</p>
-          <p className="mt-1 text-xs text-slate-500">
-            {report.topic} / {report.createdAt}
-          </p>
-        </div>
-        <ProofStatusBadge status={proofStatus} />
-      </div>
-
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <ModeBadge mode={report.mode} />
-        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">Risk {report.riskScore}</span>
-        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">Alpha {report.alphaScore}</span>
-      </div>
-
-      <div className="mt-3 grid gap-2">
-        <ProofHashLine label={`${report.title} Report Hash`} value={report.reportHash} copiedKey={copiedKey} copyText={copyText} />
-        <ProofHashLine label={`${report.title} Evidence Hash`} value={report.evidenceHash} copiedKey={copiedKey} copyText={copyText} />
-        <ProofHashLine label={`${report.title} Tx Hash`} value={txValue} copiedKey={copiedKey} copyText={copyText} disabled={txValue === "pending"} />
-      </div>
-    </div>
-  );
-}
-
-function ProofHashLine({
-  label,
-  value,
-  copiedKey,
-  copyText,
-  disabled = false
-}: {
-  label: string;
-  value: string;
-  copiedKey: string;
-  copyText: (text: string, label: string) => Promise<void>;
-  disabled?: boolean;
-}) {
-  return (
-    <div className="flex min-w-0 items-center justify-between gap-2 rounded-lg border border-slate-100 bg-slate-50 px-2.5 py-2">
-      <p className="mono min-w-0 truncate text-xs text-slate-500" spellCheck={false}>
-        {shortValue(value)}
+      <p className="mono mt-2 truncate text-xs font-semibold text-slate-950" spellCheck={false}>
+        {value}
       </p>
-      <CopyButton label={label} copied={copiedKey === label} onClick={() => copyText(value, label)} disabled={disabled} />
     </div>
   );
 }
 
-function ProofStatusBadge({ status }: { status: Exclude<ProofStatusFilter, "All"> }) {
-  const attested = status === "Attested";
-
+function ReceiptFact({ label, value }: { label: string; value: string }) {
   return (
-    <span className={clsx("inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold ring-1", attested ? "bg-emerald-50 text-emerald-700 ring-emerald-100" : "bg-orange-50 text-orange-700 ring-orange-100")}>
-      {attested ? <ShieldCheck aria-hidden className="h-3.5 w-3.5" /> : <AlertTriangle aria-hidden className="h-3.5 w-3.5" />}
-      {status}
-    </span>
+    <div className="min-w-0 rounded-lg border border-slate-200 bg-white p-3">
+      <p className="text-xs font-medium text-slate-500">{label}</p>
+      <p className="mono mt-2 truncate text-sm text-slate-900" spellCheck={false}>
+        {value}
+      </p>
+    </div>
   );
 }
 
-function filterProofHistory(items: Report[], filters: ProofHistoryFilters) {
-  const query = filters.query.trim().toLowerCase();
-
-  return items.filter((report) => {
-    const reportDate = report.createdAt.slice(0, 10);
-    const proofStatus = getProofStatus(report);
-    const matchesQuery = query
-      ? [report.title, report.topic, report.summary, report.reportHash, report.evidenceHash].some((value) => value.toLowerCase().includes(query))
-      : true;
-    const matchesMode = filters.mode === "All" || report.mode === filters.mode;
-    const matchesStatus = filters.status === "All" || proofStatus === filters.status;
-    const matchesStart = !filters.startDate || reportDate >= filters.startDate;
-    const matchesEnd = !filters.endDate || reportDate <= filters.endDate;
-
-    return matchesQuery && matchesMode && matchesStatus && matchesStart && matchesEnd;
-  });
-}
-
-function getProofStatus(report: Report): Exclude<ProofStatusFilter, "All"> {
-  return report.attestation?.onChainStatus === "confirmed" || report.status === "已上链" ? "Attested" : "Pending";
+function FlowStep({ done, label }: { done: boolean; label: string }) {
+  return (
+    <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+      <span className={clsx("grid h-5 w-5 place-items-center rounded-full", done ? "bg-emerald-500 text-white" : "bg-slate-200 text-slate-500")}>
+        <CheckCircle2 aria-hidden className="h-3.5 w-3.5" />
+      </span>
+      <span className="text-slate-700">{label}</span>
+    </div>
+  );
 }
 
 function recordFromReport(report: Report): AttestationRecord | null {
@@ -714,37 +418,144 @@ function toReportAttestation(record: AttestationRecord): ReportAttestation {
   };
 }
 
-function getProofDateRangeForPreset(preset: Exclude<ProofHistoryDatePreset, "custom">, items: Report[] = reports): Pick<ProofHistoryFilters, "startDate" | "endDate"> {
-  if (preset === "all") return { startDate: "", endDate: "" };
-
-  const anchorDate = getLatestReportDate(items);
-  if (preset === "today") return { startDate: anchorDate, endDate: anchorDate };
-
+function createProofBundle(report: Report, record: AttestationRecord | null, prepared: PreparedChainAttestation | null, config: ReturnType<typeof readAttestationConfig>) {
   return {
-    startDate: shiftDate(anchorDate, preset === "7d" ? -6 : -29),
-    endDate: anchorDate
+    report,
+    attestation: record,
+    chain: {
+      chainId: config.chainId,
+      contractAddress: config.contractAddress,
+      explorerBaseUrl: config.explorerBaseUrl,
+      calldata: prepared?.data,
+      functionSignature: prepared?.functionSignature
+    }
   };
 }
 
-function formatProofDateRangeHint(filters: ProofHistoryFilters) {
-  if (!filters.startDate && !filters.endDate) return "Showing all dates";
-  return `Current range: ${filters.startDate || "open"} to ${filters.endDate || "open"}`;
-}
+type AttestationCopy = (typeof attestationCopy)[keyof typeof attestationCopy];
 
-function getLatestReportDate(items: Report[]) {
-  return items.reduce((latest, report) => {
-    const reportDate = report.createdAt.slice(0, 10);
-    return reportDate > latest ? reportDate : latest;
-  }, items[0]?.createdAt.slice(0, 10) ?? new Date().toISOString().slice(0, 10));
-}
-
-function shiftDate(date: string, days: number) {
-  const value = new Date(`${date}T00:00:00.000Z`);
-  value.setUTCDate(value.getUTCDate() + days);
-  return value.toISOString().slice(0, 10);
+function getWalletStatusLabel(connection: WalletConnection, copy: AttestationCopy) {
+  if (connection.status === "connected") return `${copy.walletConnected} ${shortAddress(connection.address)}${connection.chainId ? ` / ${connection.chainId}` : ""}`;
+  if (connection.status === "disconnected") return connection.chainId ? `${copy.walletDisconnected} / ${connection.chainId}` : copy.walletDisconnected;
+  if (connection.status === "checking") return copy.walletChecking;
+  return copy.walletMissing;
 }
 
 function shortValue(value: string) {
-  if (value === "pending") return value;
-  return `${value.slice(0, 10)}...${value.slice(-8)}`;
+  return value.length > 22 ? `${value.slice(0, 10)}...${value.slice(-8)}` : value;
 }
+
+const attestationCopy = {
+  en: {
+    eyebrow: "On-chain proof",
+    title: "User Wallet Attestation",
+    description: "Select a backend Agent report, sign the Sepolia transaction with the connected user wallet, read the event/storage back, and persist the receipt.",
+    loading: "Loading reports",
+    loadingDetail: "Reading backend-persisted Agent reports.",
+    loadFailed: "Report load failed",
+    noReports: "No real reports yet",
+    noReportsDetail: "Run a real Agent first. This page does not show demo receipts or fake ETH records.",
+    goWorkspace: "Run Agent",
+    walletStatus: "Wallet",
+    contractStatus: "Sepolia contract",
+    backendStatus: "Backend receipt",
+    report: "Report",
+    walletConnected: "Wallet connected",
+    walletDisconnected: "Wallet not connected",
+    walletChecking: "Checking wallet",
+    walletMissing: "Browser wallet missing",
+    connectWallet: "Connect wallet",
+    walletRequired: "Connect wallet first",
+    openWalletTx: "Open wallet transaction",
+    write: "Write on-chain",
+    writing: "Writing...",
+    missing: "Missing",
+    requiredChain: "required chain config",
+    realDisabled: "Real chain write unavailable",
+    realDisabledDetail: "No fallback receipt is generated. Configure the missing values before writing to Sepolia.",
+    hashCheck: "Hash verification",
+    payload: "Contract payload",
+    readback: "Chain readback",
+    match: "match",
+    mismatch: "mismatch",
+    checking: "checking",
+    waiting: "waiting",
+    pending: "pending",
+    notSubmitted: "not submitted",
+    savedReceipt: "Stored attestation receipt",
+    explorerMissing: "Explorer URL or tx hash is missing",
+    openExplorer: "Open Explorer",
+    downloadReceipt: "Download Receipt",
+    wallet: "Wallet",
+    block: "Block",
+    reportId: "Report ID",
+    flowTitle: "Proof flow",
+    flowReport: "Backend report selected",
+    flowHash: "Hashes recomputed",
+    flowContract: "Contract ready",
+    flowWallet: "User wallet connected",
+    flowReadback: "Event and storage verified",
+    auditTitle: "Audit bundle",
+    auditDetail: "The bundle contains the report, receipt, chain config, and calldata. It never fabricates a transaction hash.",
+    downloadBundle: "Download Proof Bundle",
+    writeVerified: "On-chain write and readback verified",
+    writeSubmitted: "Transaction submitted; readback needs review",
+    writeFailed: "On-chain attestation failed"
+  },
+  zh: {
+    eyebrow: "链上证明",
+    title: "用户钱包上链证明",
+    description: "选择后端 Agent 报告，用已连接的用户钱包签名 Sepolia 交易，回读事件和存储后把回执写回后端。",
+    loading: "正在加载报告",
+    loadingDetail: "正在读取后端持久化 Agent 报告。",
+    loadFailed: "报告加载失败",
+    noReports: "暂无真实报告",
+    noReportsDetail: "请先运行真实 Agent。本页面不会展示演示回执或假的 ETH 记录。",
+    goWorkspace: "运行 Agent",
+    walletStatus: "钱包",
+    contractStatus: "Sepolia 合约",
+    backendStatus: "后端回执",
+    report: "报告",
+    walletConnected: "钱包已连接",
+    walletDisconnected: "钱包未连接",
+    walletChecking: "正在检查钱包",
+    walletMissing: "未检测到浏览器钱包",
+    connectWallet: "连接钱包",
+    walletRequired: "请先连接钱包",
+    openWalletTx: "打开钱包交易",
+    write: "写入链上",
+    writing: "写入中...",
+    missing: "缺少",
+    requiredChain: "必要链路配置",
+    realDisabled: "真实上链不可用",
+    realDisabledDetail: "不会生成 fallback 回执。请先配置缺失项，再写入 Sepolia。",
+    hashCheck: "哈希校验",
+    payload: "合约调用数据",
+    readback: "链上回读",
+    match: "匹配",
+    mismatch: "不匹配",
+    checking: "检查中",
+    waiting: "等待中",
+    pending: "待确认",
+    notSubmitted: "未提交",
+    savedReceipt: "已保存证明回执",
+    explorerMissing: "缺少浏览器地址或交易哈希",
+    openExplorer: "打开浏览器",
+    downloadReceipt: "下载回执",
+    wallet: "钱包",
+    block: "区块",
+    reportId: "报告 ID",
+    flowTitle: "证明流程",
+    flowReport: "已选择后端报告",
+    flowHash: "已复算哈希",
+    flowContract: "合约已就绪",
+    flowWallet: "用户钱包已连接",
+    flowReadback: "事件和存储已验证",
+    auditTitle: "审计包",
+    auditDetail: "审计包包含报告、回执、链配置和 calldata，不会伪造交易哈希。",
+    downloadBundle: "下载证明包",
+    writeVerified: "链上写入和回读已验证",
+    writeSubmitted: "交易已提交，回读需要复核",
+    writeFailed: "链上证明失败"
+  }
+} as const;

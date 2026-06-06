@@ -61,6 +61,25 @@ export function authorizeOperator(request: Request): GuardFailure | null {
   };
 }
 
+export function readOperatorSession(request: Request) {
+  const expectedToken = process.env.AGENT_OPERATOR_TOKEN?.trim();
+  if (!expectedToken) {
+    return {
+      configured: false,
+      authenticated: true,
+      mode: "unconfigured" as const
+    };
+  }
+
+  const cookieToken = readCookie(request, operatorCookieName)?.trim();
+  const authenticated = cookieToken === expectedToken;
+  return {
+    configured: true,
+    authenticated,
+    mode: authenticated ? ("authenticated" as const) : ("locked" as const)
+  };
+}
+
 export function enforceRateLimit(request: Request, scope: GuardScope, limit = defaultLimitForScope(scope)): GuardFailure | null {
   const configuredLimit = readLimit(scope, limit);
   if (configuredLimit <= 0) return null;

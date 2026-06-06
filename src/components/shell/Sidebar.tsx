@@ -9,16 +9,15 @@ import {
   FileText,
   LayoutDashboard,
   Network,
-  Presentation,
   Settings,
   ShieldCheck
 } from "lucide-react";
 import { navigationItems } from "@/lib/navigation";
 import type { PageKey } from "@/lib/types";
+import { useAppActions } from "./AppContext";
 
 const iconMap = {
   workspace: LayoutDashboard,
-  demo: Presentation,
   tasks: Activity,
   reports: FileText,
   trace: Network,
@@ -29,6 +28,7 @@ const iconMap = {
 
 export function Sidebar() {
   const pathname = usePathname();
+  const { t } = useAppActions();
 
   return (
     <aside aria-label="Primary navigation" className="sticky top-0 hidden h-[100dvh] w-[280px] shrink-0 self-start overflow-y-auto border-r border-slate-200 bg-white/95 px-4 py-4 thin-scrollbar lg:block">
@@ -36,7 +36,7 @@ export function Sidebar() {
         <LogoMark />
         <div>
           <p className="text-sm font-semibold text-slate-950">ChainPulse Agent</p>
-          <p className="text-xs text-slate-500">AI risk operations</p>
+          <p className="text-xs text-slate-500">{t("shell.subtitle")}</p>
         </div>
       </div>
 
@@ -55,21 +55,21 @@ export function Sidebar() {
               )}
             >
               <Icon aria-hidden className="h-4 w-4" />
-              <span>{item.label}</span>
+              <span>{t(`nav.${item.key}`)}</span>
             </Link>
           );
         })}
       </nav>
 
       <div className="mt-5 grid gap-3">
-        <QuotaCard label="Evidence quota" value="72%" detail="14,280 / 20,000 calls" tone="blue" />
-        <QuotaCard label="Agent capacity" value="18/25" detail="7 runs available today" tone="green" />
+        <QuotaCard label={t("shell.evidenceQuota")} value="72%" detail="14,280 / 20,000 calls" tone="blue" />
+        <QuotaCard label={t("shell.agentCapacity")} value="18/25" detail="7 runs available today" tone="green" />
       </div>
 
       <div className="mt-5 space-y-1 border-t border-slate-200 pt-4 text-xs text-slate-500">
-        <p>OpenAI-compatible reasoning</p>
-        <p>xAPI evidence tools</p>
-        <p>Sepolia attestation enabled</p>
+        <p>{t("shell.reasoning")}</p>
+        <p>{t("shell.evidenceTools")}</p>
+        <p>{t("shell.attestationEnabled")}</p>
       </div>
     </aside>
   );

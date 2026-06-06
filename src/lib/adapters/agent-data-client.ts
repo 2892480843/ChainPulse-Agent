@@ -1,5 +1,4 @@
 import type { AgentCollectionResponse, AgentEntityResponse, StoredAgentRun } from "@/lib/agent-types";
-import { reports as mockReports, runningTasks as mockTasks, xapiTraces as mockTraces } from "@/lib/mock-data";
 import type { Report, ReportAttestation, RunningTask, XApiTrace } from "@/lib/types";
 
 export async function fetchStoredReports() {
@@ -40,15 +39,15 @@ export async function saveReportAttestationRecord(reportId: string, attestation:
 }
 
 export function mergeReportsWithMock(storedReports: Report[]) {
-  return mergeById(storedReports, mockReports.map((report) => ({ ...report, sourceMode: report.sourceMode ?? "mock" })));
+  return storedReports;
 }
 
 export function mergeTasksWithMock(storedTasks: RunningTask[]) {
-  return mergeById(storedTasks, mockTasks.map((task) => ({ ...task, sourceMode: task.sourceMode ?? "mock" })));
+  return storedTasks;
 }
 
 export function mergeTracesWithMock(storedTraces: XApiTrace[]) {
-  return mergeById(storedTraces, mockTraces.map((trace) => ({ ...trace, sourceMode: trace.sourceMode ?? "mock" })));
+  return storedTraces;
 }
 
 async function fetchCollection<T>(url: string): Promise<AgentCollectionResponse<T>> {
@@ -65,9 +64,4 @@ async function fetchEntity<T>(url: string, init?: RequestInit): Promise<AgentEnt
   const body = (await response.json()) as AgentEntityResponse<T>;
   if (!body.ok) throw new Error(body.error?.message ?? "invalid entity response");
   return body;
-}
-
-function mergeById<T extends { id: string }>(primary: T[], fallback: T[]) {
-  const seen = new Set(primary.map((item) => item.id));
-  return [...primary, ...fallback.filter((item) => !seen.has(item.id))];
 }

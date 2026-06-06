@@ -18,6 +18,7 @@ export interface AgentRunApiResponse {
   error?: {
     code: string;
     message: string;
+    recoverable?: boolean;
   };
 }
 
@@ -32,5 +33,6 @@ export interface AgentEntityResponse<T> {
   error?: {
     code: string;
     message: string;
+    recoverable?: boolean;
   };
 }

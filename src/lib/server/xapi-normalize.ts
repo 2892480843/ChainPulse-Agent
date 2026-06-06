@@ -1,65 +1,8 @@
-import { xapiTraces } from "@/lib/mock-data";
 import type { XApiActionSchema, XApiActionSearchResult, XApiCallResult } from "@/lib/xapi-types";
-
-export function fallbackSearchActions(query: string): XApiActionSearchResult[] {
-  const normalized = query.trim().toLowerCase();
-  const matched = xapiTraces.filter((trace) => {
-    const haystack = `${trace.action} ${trace.capability} ${trace.outputPreview}`.toLowerCase();
-    return normalized.length === 0 || haystack.includes(normalized);
-  });
-  const source = matched.length > 0 ? matched : xapiTraces;
-  const unique = new Map<string, XApiActionSearchResult>();
-
-  for (const trace of source) {
-    unique.set(trace.action, {
-      action: trace.action,
-      capability: trace.capability,
-      description: trace.outputPreview
-    });
-  }
-
-  return [...unique.values()];
-}
-
-export function fallbackActionSchema(action: string): XApiActionSchema {
-  const trace = findTrace(action);
-  return {
-    action,
-    capability: trace?.capability,
-    schemaVersion: "mock-2026-06",
-    input: inferInputSchema(trace?.input ?? {}),
-    raw: {
-      source: "mock fallback",
-      note: "Fallback schema generated from local mock trace data."
-    }
-  };
-}
-
-export function fallbackCallResult(action: string, input: Record<string, unknown>): XApiCallResult {
-  const trace = findTrace(action);
-  const capability = trace?.capability ?? inferCapability(action);
-  return {
-    action,
-    capability,
-    output: {
-      ...(trace?.output ?? { capability, source: "generated fallback" }),
-      fallbackInput: input
-    },
-    outputPreview: trace?.outputPreview ?? `${capability} fallback signal captured`,
-    raw: trace
-      ? {
-          source: "mock fallback",
-          traceId: trace.id
-        }
-      : {
-          source: "mock fallback"
-        }
-  };
-}
 
 export function normalizeSearchOutput(raw: unknown, query: string): XApiActionSearchResult[] {
   const candidates = Array.isArray(raw) ? raw : getArrayProperty(raw, ["actions", "data", "results", "items"]);
-  if (!candidates) return fallbackSearchActions(query);
+  if (!candidates) return [];
 
   return candidates
     .map((item) => normalizeSearchItem(item))
@@ -69,7 +12,7 @@ export function normalizeSearchOutput(raw: unknown, query: string): XApiActionSe
 export function normalizeSchemaOutput(action: string, raw: unknown): XApiActionSchema {
   const record = isRecord(raw) ? raw : {};
   const input = getInputSchema(record);
-  const capability = typeof record.capability === "string" ? record.capability : findTrace(action)?.capability;
+  const capability = typeof record.capability === "string" ? record.capability : inferCapability(action);
   const schemaVersion = typeof record.schemaVersion === "string" ? record.schemaVersion : typeof record.version === "string" ? record.version : undefined;
 
   return {
@@ -82,11 +25,10 @@ export function normalizeSchemaOutput(action: string, raw: unknown): XApiActionS
 }
 
 export function normalizeCallOutput(action: string, input: Record<string, unknown>, raw: unknown): XApiCallResult {
-  const trace = findTrace(action);
   const output = isRecord(raw) ? raw : { value: raw };
   return {
     action,
-    capability: trace?.capability ?? inferCapability(action),
+    capability: inferCapability(action),
     output,
     outputPreview: summarizeOutput(output),
     raw: {
@@ -94,20 +36,6 @@ export function normalizeCallOutput(action: string, input: Record<string, unknow
       output
     }
   };
-}
-
-function findTrace(action: string) {
-  return xapiTraces.find((trace) => trace.action === action);
-}
-
-function inferInputSchema(input: Record<string, unknown>) {
-  return Object.fromEntries(
-    Object.entries(input).map(([key, value]) => {
-      if (Array.isArray(value)) return [key, "array"];
-      if (value === null) return [key, "null"];
-      return [key, typeof value];
-    })
-  );
 }
 
 function normalizeSearchItem(item: unknown): XApiActionSearchResult | null {

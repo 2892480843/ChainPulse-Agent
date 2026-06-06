@@ -1,6 +1,6 @@
-import { reports, runningTasks, watchlistTargets, xapiTraces } from "./mock-data";
+import type { Report, RunningTask, XApiTrace } from "./types";
 
-export type SearchResultType = "Report" | "Task" | "Trace" | "Watchlist";
+export type SearchResultType = "Report" | "Task" | "Trace";
 
 export interface SearchResult {
   id: string;
@@ -10,14 +10,20 @@ export interface SearchResult {
   path: string;
 }
 
+export interface SearchableRecords {
+  reports: Report[];
+  tasks: RunningTask[];
+  traces: XApiTrace[];
+}
+
 const includesQuery = (value: string, query: string) => value.toLowerCase().includes(query.toLowerCase());
 
-export function searchChainPulse(query: string, limit = 6): SearchResult[] {
+export function searchChainPulse(query: string, records: SearchableRecords, limit = 6): SearchResult[] {
   const cleanQuery = query.trim();
   if (cleanQuery.length === 0) return [];
 
-  const reportResults: SearchResult[] = reports
-    .filter((report) => includesQuery(`${report.title} ${report.topic} ${report.summary}`, cleanQuery))
+  const reportResults: SearchResult[] = records.reports
+    .filter((report) => includesQuery(`${report.title} ${report.topic} ${report.summary} ${report.reportHash} ${report.evidenceHash}`, cleanQuery))
     .map((report) => ({
       id: report.id,
       type: "Report",
@@ -26,8 +32,8 @@ export function searchChainPulse(query: string, limit = 6): SearchResult[] {
       path: `/reports/${report.id}`
     }));
 
-  const taskResults: SearchResult[] = runningTasks
-    .filter((task) => includesQuery(`${task.topic} ${task.mode} ${task.status}`, cleanQuery))
+  const taskResults: SearchResult[] = records.tasks
+    .filter((task) => includesQuery(`${task.topic} ${task.mode} ${task.status} ${task.currentStep}`, cleanQuery))
     .map((task) => ({
       id: task.id,
       type: "Task",
@@ -36,41 +42,21 @@ export function searchChainPulse(query: string, limit = 6): SearchResult[] {
       path: `/tasks?task=${task.id}`
     }));
 
-  const traceResults: SearchResult[] = xapiTraces
-    .filter((trace) => includesQuery(`${trace.action} ${trace.capability} ${trace.outputPreview}`, cleanQuery))
+  const traceResults: SearchResult[] = records.traces
+    .filter((trace) => includesQuery(`${trace.action} ${trace.capability} ${trace.outputPreview} ${trace.inputHash} ${trace.outputHash}`, cleanQuery))
     .map((trace) => ({
       id: trace.id,
       type: "Trace",
-      title: trace.action,
+      title: trace.source === "ai" ? `AI: ${trace.action}` : trace.action,
       description: trace.outputPreview,
       path: `/trace?trace=${trace.id}`
     }));
 
-  const watchlistResults: SearchResult[] = watchlistTargets
-    .filter((target) => includesQuery(`${target.name} ${target.symbol} ${target.category}`, cleanQuery))
-    .map((target) => ({
-      id: target.id,
-      type: "Watchlist",
-      title: target.name,
-      description: `${target.category} / ${target.alertState}`,
-      path: `/watchlist?target=${target.id}`
-    }));
-
-  return [...reportResults, ...taskResults, ...traceResults, ...watchlistResults]
-    .sort((left, right) => resultPriority(left) - resultPriority(right))
-    .slice(0, limit);
+  return [...reportResults, ...taskResults, ...traceResults].sort((left, right) => resultPriority(left) - resultPriority(right)).slice(0, limit);
 }
 
 function resultPriority(result: SearchResult) {
-  if (result.type === "Report" && result.id === "rep_eth_001") return 0;
-  if (result.type === "Task" && result.id === "task_eth_risk_001") return 1;
-  if (result.type === "Trace") {
-    const trace = xapiTraces.find((item) => item.id === result.id);
-    if (trace?.status === "failed") return 2;
-  }
-  if (result.type === "Report") {
-    const report = reports.find((item) => item.id === result.id);
-    if (report?.status === "已上链") return 3;
-  }
-  return 10;
+  if (result.type === "Task") return 0;
+  if (result.type === "Report") return 1;
+  return 2;
 }

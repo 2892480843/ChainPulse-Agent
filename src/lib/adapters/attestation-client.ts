@@ -1,5 +1,4 @@
 import { decodeEventLog, decodeFunctionResult, encodeFunctionData, isAddress, type Address } from "viem";
-import { attestation, reports } from "@/lib/mock-data";
 import type { EvidenceItem, Report } from "@/lib/types";
 
 export interface AttestationRecord {
@@ -25,8 +24,8 @@ export interface AttestationClient {
   getAttestation(reportId: string): Promise<AttestationRecord>;
 }
 
-export type AttestationReadinessState = "live ready" | "mock fallback" | "not configured";
-export type AttestationClientMode = "live ready" | "mock fallback";
+export type AttestationReadinessState = "live ready" | "read only" | "not configured";
+export type AttestationClientMode = "live ready" | "not configured";
 export type WalletMode = "browser wallet detected" | "browser wallet missing";
 
 export interface AttestationConfig {
@@ -152,7 +151,7 @@ export const signalAttestationAbi = [
   }
 ] as const;
 
-export const mockAttestationClient: AttestationClient = {
+export const unavailableAttestationClient: AttestationClient = {
   async createReportHash(report) {
     return createReportHash(report);
   },
@@ -161,14 +160,12 @@ export const mockAttestationClient: AttestationClient = {
     return createEvidenceHash(evidence);
   },
 
-  async attestReport(reportId, walletAddress) {
-    const report = findReport(reportId);
-    return createMockAttestationRecord(report, walletAddress);
+  async attestReport(reportId) {
+    throw new Error(`real attestation is not configured for report: ${reportId}`);
   },
 
   async getAttestation(reportId) {
-    const report = findReport(reportId);
-    return createMockAttestationRecord(report);
+    throw new Error(`real attestation is not configured for report: ${reportId}`);
   }
 };
 
@@ -181,43 +178,14 @@ export const chainAttestationClient: AttestationClient = {
     return createEvidenceHash(evidence);
   },
 
-  async attestReport(reportId, walletAddress) {
-    const report = findReport(reportId);
-    return attestReportOnChain(report, walletAddress);
+  async attestReport(reportId) {
+    throw new Error(`report object is required for user-wallet attestation: ${reportId}`);
   },
 
   async getAttestation(reportId) {
-    const report = findReport(reportId);
-    const config = readAttestationConfig();
-
-    if (!config.contractConfigured) {
-      throw new Error("contract not configured");
-    }
-
-    return {
-      reportHash: await createReportHash(report),
-      evidenceHash: await createEvidenceHash(report.evidence),
-      txHash: "not submitted",
-      walletAddress: "wallet required",
-      block: "not queried",
-      timestamp: new Date().toISOString(),
-      chainId: config.chainId,
-      contractAddress: config.contractAddress,
-      metadataURI: createReportMetadataURI(report),
-      explorerAddressUrl: config.explorerBaseUrl ? `${config.explorerBaseUrl}/address/${config.contractAddress}` : undefined
-    };
+    throw new Error(`stored attestation receipt must be loaded from the backend: ${reportId}`);
   }
 };
-
-export async function createMockAttestationRecord(report: Report, walletAddress = attestation.walletAddress): Promise<AttestationRecord> {
-  return {
-    ...attestation,
-    reportHash: await createReportHash(report),
-    evidenceHash: await createEvidenceHash(report.evidence),
-    walletAddress,
-    metadataURI: createReportMetadataURI(report)
-  };
-}
 
 export async function attestReportOnChain(report: Report, walletAddress: string): Promise<AttestationRecord> {
   const config = readAttestationConfig();
@@ -295,18 +263,19 @@ export function getAttestationReadiness(config: AttestationConfig = readAttestat
   if (!config.contractConfigured) {
     return {
       state: "not configured",
-      detail: "没有合约地址时只展示 mock fallback receipt，不伪造上链写入。",
+      detail: "缺少合约地址时不能上链，页面不会生成本地假回执。",
       canWrite: false,
       missing
     };
   }
 
-  const state = config.explorerConfigured ? "live ready" : "mock fallback";
+  const canWrite = config.contractConfigured && config.walletMode === "browser wallet detected";
+  const state = canWrite ? "live ready" : "read only";
 
   return {
     state,
-    detail: state === "live ready" ? "合约与 Explorer 已配置；浏览器钱包可用时可发起真实交易。" : `链上 adapter 已准备，但还缺 ${missing.join(", ")}。`,
-    canWrite: config.contractConfigured && config.walletMode === "browser wallet detected",
+    detail: canWrite ? "合约与浏览器钱包已就绪，可由用户钱包发起真实交易。" : `链上 adapter 已准备，但还缺 ${missing.join(", ")}。`,
+    canWrite,
     missing
   };
 }
@@ -320,8 +289,8 @@ export function selectAttestationClient(config: AttestationConfig = readAttestat
   }
 
   return {
-    mode: "mock fallback",
-    client: mockAttestationClient
+    mode: "not configured",
+    client: unavailableAttestationClient
   };
 }
 
@@ -401,14 +370,6 @@ export function toEvidencePacket(evidence: EvidenceItem[]) {
 function toReportHashPayload(report: Report) {
   const { reportHash: _reportHash, evidenceHash: _evidenceHash, ...payload } = report;
   return payload;
-}
-
-function findReport(reportId: string) {
-  const report = reports.find((item) => item.id === reportId);
-  if (!report) {
-    throw new Error(`report not found: ${reportId}`);
-  }
-  return report;
 }
 
 export function createReportMetadataURI(report: Report) {

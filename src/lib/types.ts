@@ -1,4 +1,4 @@
-export type PageKey = "workspace" | "demo" | "tasks" | "reports" | "trace" | "attestation" | "watchlist" | "settings";
+export type PageKey = "workspace" | "tasks" | "reports" | "trace" | "attestation" | "watchlist" | "settings";
 
 export type ScanMode = "Alpha Scan" | "Risk Scan" | "DAO 尽调";
 
@@ -150,7 +150,7 @@ export interface WorkspaceRunContext {
   mode: ScanMode;
   advancedFilters: WorkspaceAdvancedFilters;
   createdAt: string;
-  runtimeLabel?: "live xAPI" | "partial xAPI" | "mock fallback";
+  runtimeLabel?: "live xAPI" | "partial xAPI" | "unavailable";
   runtimeReason?: "connected" | "partial fallback" | "no XAPI_KEY" | "upstream failed" | "checking xAPI";
   schemaFirst?: boolean;
   traceIds?: string[];

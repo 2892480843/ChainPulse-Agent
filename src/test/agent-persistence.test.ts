@@ -4,7 +4,8 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { POST as runPOST } from "@/app/api/agent/run/route";
 import { GET as aiHealthGET } from "@/app/api/ai/health/route";
-import { POST as operatorSessionPOST } from "@/app/api/operator/session/route";
+import { DELETE as operatorSessionDELETE, GET as operatorSessionGET, POST as operatorSessionPOST } from "@/app/api/operator/session/route";
+import { POST as reportAttestationPOST } from "@/app/api/reports/[id]/attestation/route";
 import { GET as reportsGET } from "@/app/api/reports/route";
 import { GET as reportGET } from "@/app/api/reports/[id]/route";
 import { GET as tasksGET } from "@/app/api/tasks/route";
@@ -207,6 +208,97 @@ describe("agent persistence routes", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("set-cookie")).toContain(operatorCookieName);
     expect(response.headers.get("set-cookie")).toContain("HttpOnly");
+  });
+
+  it("persists an attestation receipt back to the stored report", async () => {
+    const runResponse = await runPOST(
+      new Request("http://localhost/api/agent/run", {
+        method: "POST",
+        body: JSON.stringify({
+          topic: "$ETH",
+          mode: "Risk Scan",
+          advancedFilters: {
+            evidenceWindow: "24h",
+            minimumConfidence: "0.65",
+            xapiClasses: "Twitter + Web + News + Crypto"
+          },
+          createdAt: "12:00:00"
+        })
+      })
+    );
+    const runBody = await readJson<AgentRunApiResponse>(runResponse);
+    const report = runBody.data?.report;
+    expect(report).toBeTruthy();
+
+    const receipt = {
+      reportHash: report?.reportHash ?? "",
+      evidenceHash: report?.evidenceHash ?? "",
+      txHash: "0x1111111111111111111111111111111111111111111111111111111111111111",
+      walletAddress: "0x0000000000000000000000000000000000000002",
+      block: "123",
+      timestamp: "2026-06-06T00:00:00.000Z",
+      chainId: 11155111,
+      contractAddress: "0x0000000000000000000000000000000000000003",
+      reportId: "2",
+      metadataURI: `chainpulse://reports/${report?.id}`,
+      explorerTxUrl: "https://sepolia.etherscan.io/tx/0x1111111111111111111111111111111111111111111111111111111111111111",
+      onChainStatus: "confirmed" as const
+    };
+
+    const response = await reportAttestationPOST(
+      new Request(`http://localhost/api/reports/${report?.id}/attestation`, {
+        method: "POST",
+        body: JSON.stringify(receipt)
+      }),
+      { params: Promise.resolve({ id: report?.id ?? "" }) }
+    );
+    const body = await readJson<AgentEntityResponse<Report>>(response);
+
+    expect(response.status).toBe(200);
+    expect(body.data?.attestation?.txHash).toBe(receipt.txHash);
+    expect(body.data?.attestation?.walletAddress).toBe(receipt.walletAddress);
+
+    const detail = await readJson<AgentEntityResponse<StoredAgentRun>>(
+      await reportGET(new Request(`http://localhost/api/reports/${report?.id}`), { params: Promise.resolve({ id: report?.id ?? "" }) })
+    );
+    expect(detail.data?.report.attestation?.onChainStatus).toBe("confirmed");
+  });
+
+  it("reports operator session status without leaking the configured token", async () => {
+    process.env.AGENT_OPERATOR_TOKEN = "test-operator-token";
+
+    const locked = await operatorSessionGET(new Request("http://localhost/api/operator/session"));
+    const lockedBody = await readJson<{ ok: boolean; data: { configured: boolean; authenticated: boolean; mode: string } }>(locked);
+    expect(locked.status).toBe(200);
+    expect(lockedBody.data).toEqual({
+      configured: true,
+      authenticated: false,
+      mode: "locked"
+    });
+    expect(JSON.stringify(lockedBody)).not.toContain("test-operator-token");
+
+    const authenticated = await operatorSessionGET(
+      new Request("http://localhost/api/operator/session", {
+        headers: {
+          cookie: `${operatorCookieName}=test-operator-token`
+        }
+      })
+    );
+    const authenticatedBody = await readJson<{ ok: boolean; data: { configured: boolean; authenticated: boolean; mode: string } }>(authenticated);
+    expect(authenticatedBody.data).toEqual({
+      configured: true,
+      authenticated: true,
+      mode: "authenticated"
+    });
+    expect(JSON.stringify(authenticatedBody)).not.toContain("test-operator-token");
+
+    const closed = await operatorSessionDELETE();
+    const closedBody = await readJson<{ ok: boolean; data: { configured: boolean; authenticated: boolean; mode: string } }>(closed);
+    expect(closedBody.data).toEqual({
+      configured: true,
+      authenticated: false,
+      mode: "locked"
+    });
   });
 
   it("protects AI health when an operator token is configured", async () => {

@@ -3,7 +3,6 @@ import { createAiService } from "@/lib/server/ai-service";
 import { hashJson } from "@/lib/server/xapi-trace";
 import { planAgentTools } from "@/lib/server/agent-planner";
 import { writeAgentReportDraft } from "@/lib/server/report-writer";
-import { reports as mockReports } from "@/lib/mock-data";
 import { timelineSteps } from "@/lib/navigation";
 import type { AgentAiAudit, AgentToolCallAudit, AiGenerateResult } from "@/lib/ai-types";
 import type { StoredAgentRun } from "@/lib/agent-types";
@@ -55,8 +54,8 @@ export async function runPersistentWorkspaceAgent(context: WorkspaceRunContext):
     ...schemaResults.map((result) =>
       serviceResultToTrace(result, {
         taskId,
-        fallbackAction: result.data.action,
-        fallbackCapability: result.data.capability ?? "Schema Discovery",
+        fallbackAction: result.data?.action ?? "xapi.schema",
+        fallbackCapability: result.data?.capability ?? "Schema Discovery",
         method: "GET",
         schemaFetched: true
       })
@@ -64,8 +63,8 @@ export async function runPersistentWorkspaceAgent(context: WorkspaceRunContext):
     ...callResults.map((result) =>
       serviceResultToTrace(result, {
         taskId,
-        fallbackAction: result.data.action,
-        fallbackCapability: result.data.capability,
+        fallbackAction: result.data?.action ?? "xapi.call",
+        fallbackCapability: result.data?.capability ?? "xAPI",
         method: "POST",
         schemaFetched: true
       })
@@ -125,7 +124,7 @@ export async function runPersistentWorkspaceAgent(context: WorkspaceRunContext):
       ...context,
       taskId,
       sourceMode,
-      runtimeLabel: sourceMode === "live" ? "live xAPI" : sourceMode === "partial" ? "partial xAPI" : "mock fallback",
+      runtimeLabel: sourceMode === "live" ? "live xAPI" : sourceMode === "partial" ? "partial xAPI" : "unavailable",
       runtimeReason: sourceMode === "live" ? "connected" : sourceMode === "partial" ? "partial fallback" : health.mode === "unconfigured" ? "no XAPI_KEY" : "upstream failed",
       schemaFirst: true,
       traceIds: traces.map((trace) => trace.id),
@@ -181,7 +180,7 @@ function serviceResultToTrace<T>(
   const trace = result.trace;
   const status = trace.status === "fallback" || result.mode !== "live" ? "fallback" : trace.status === "failed" ? "failed" : "success";
   const timestamp = formatTraceTime(trace.timestamp);
-  const output = result.data && typeof result.data === "object" ? (result.data as Record<string, unknown>) : { value: result.data };
+  const output = result.data && typeof result.data === "object" ? (result.data as Record<string, unknown>) : {};
 
   return {
     id: trace.id,
@@ -274,7 +273,7 @@ function normalizeEvidence(callResults: Array<XApiServiceResult<XApiCallResult>>
 
   return callTraces.map((trace, index) => {
     const call = callResults[index];
-    const output = call?.data.output ?? trace.output;
+    const output = call?.data?.output ?? trace.output;
     const confidence = inferEvidenceConfidence(trace, call);
     return compactObject({
       id: `ev_${trace.taskId}_${index + 1}`,
@@ -472,6 +471,7 @@ function summarizeResult<T>(result: XApiServiceResult<T>, fallbackCapability: st
   if (isCallResult(result.data)) return `${result.mode}: ${result.data.outputPreview}`;
   if (isSchemaResult(result.data)) return `${result.mode}: schema-first ${Object.keys(result.data.input).length} input fields`;
   if (Array.isArray(result.data)) return `${result.mode}: ${result.data.length} action candidates`;
+  if (!result.ok) return `${result.mode}: ${result.error?.message ?? "xAPI request failed"}`;
   return `${result.mode}: ${fallbackCapability} response captured`;
 }
 
@@ -498,7 +498,7 @@ function toSourceMode(mode: XApiRouteMode): SourceMode {
 }
 
 function pendingReportStatus() {
-  return mockReports.find((report) => report.id === "rep_zec_002")?.status ?? mockReports[0].status;
+  return "未上链" as Report["status"];
 }
 
 function toEvidencePacket(evidence: EvidenceItem[]) {

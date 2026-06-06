@@ -1,18 +1,26 @@
 import { NextResponse } from "next/server";
-import { operatorCookieName } from "@/lib/server/api-guard";
+import { operatorCookieName, readOperatorSession } from "@/lib/server/api-guard";
 import { isRecord } from "@/lib/server/xapi-route";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+export async function GET(request: Request = new Request("http://localhost/api/operator/session")) {
+  return NextResponse.json({
+    ok: true,
+    data: readOperatorSession(request)
+  });
+}
 
 export async function POST(request: Request) {
   const configuredToken = process.env.AGENT_OPERATOR_TOKEN?.trim();
   if (!configuredToken) {
     return NextResponse.json({
       ok: true,
-      mode: "unconfigured",
       data: {
+        configured: false,
         authenticated: true,
+        mode: "unconfigured",
         detail: "AGENT_OPERATOR_TOKEN is not configured"
       }
     });
@@ -38,7 +46,9 @@ export async function POST(request: Request) {
   const response = NextResponse.json({
     ok: true,
     data: {
-      authenticated: true
+      configured: true,
+      authenticated: true,
+      mode: "authenticated"
     }
   });
   response.cookies.set(operatorCookieName, configuredToken, {
@@ -52,10 +62,13 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE() {
+  const configured = Boolean(process.env.AGENT_OPERATOR_TOKEN?.trim());
   const response = NextResponse.json({
     ok: true,
     data: {
-      authenticated: false
+      configured,
+      authenticated: !configured,
+      mode: configured ? "locked" : "unconfigured"
     }
   });
   response.cookies.set(operatorCookieName, "", {
@@ -67,4 +80,3 @@ export async function DELETE() {
   });
   return response;
 }
-

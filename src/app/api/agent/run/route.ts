@@ -35,13 +35,66 @@ export async function POST(request: Request) {
     );
   }
 
+  const runtimeFailure = validateLiveRuntime();
+  if (runtimeFailure) {
+    return NextResponse.json<AgentRunApiResponse>(
+      {
+        ok: false,
+        error: runtimeFailure
+      },
+      { status: 503 }
+    );
+  }
+
   const run = await runPersistentWorkspaceAgent(context);
+  if (run.sourceMode !== "live" || run.ai?.mode !== "live") {
+    return NextResponse.json<AgentRunApiResponse>(
+      {
+        ok: false,
+        error: {
+          code: "LIVE_RUNTIME_REQUIRED",
+          message: "Agent run did not complete with fully live AI and tool data; no report was saved.",
+          recoverable: true
+        }
+      },
+      { status: 502 }
+    );
+  }
+
   await saveAgentRun(run);
 
   return NextResponse.json<AgentRunApiResponse>({
     ok: true,
     data: run
   });
+}
+
+function validateLiveRuntime(): AgentRunApiResponse["error"] | null {
+  if (process.env.AI_ENABLED?.trim().toLowerCase() === "false") {
+    return {
+      code: "AI_DISABLED",
+      message: "AI_ENABLED=false. Enable AI and configure AI_API_KEY before running a real Agent.",
+      recoverable: true
+    };
+  }
+
+  if (!process.env.AI_API_KEY?.trim()) {
+    return {
+      code: "AI_API_KEY_MISSING",
+      message: "AI_API_KEY is required for real Agent planning and report generation.",
+      recoverable: true
+    };
+  }
+
+  if (!process.env.XAPI_KEY?.trim()) {
+    return {
+      code: "XAPI_KEY_MISSING",
+      message: "XAPI_KEY is required for real evidence collection. Mock evidence is not accepted.",
+      recoverable: true
+    };
+  }
+
+  return null;
 }
 
 function parseWorkspaceContext(value: unknown): WorkspaceRunContext | null {

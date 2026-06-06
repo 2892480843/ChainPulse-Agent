@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Bell, Check, Code2, Eye, EyeOff, KeyRound, LogOut, Shield, ShieldCheck, User, Wallet } from "lucide-react";
+import { useEffect, useState, type FormEvent } from "react";
+import { Bell, Check, Code2, Eye, EyeOff, KeyRound, LockKeyhole, LogOut, Shield, ShieldCheck, User, Wallet } from "lucide-react";
 import { fetchAiHealth } from "@/lib/adapters/ai-client";
 import { readAttestationConfig, readBrowserAttestationConfig } from "@/lib/adapters/attestation-client";
+import { closeOperatorSession, fetchOperatorSession, openOperatorSession, type OperatorSessionStatus } from "@/lib/adapters/operator-session-client";
 import type { AiHealthStatus } from "@/lib/ai-types";
 import { useAppActions } from "@/components/shell/AppShell";
 import { Field, SelectField } from "@/components/ui/FormFields";
@@ -20,11 +21,18 @@ export function SettingsPage() {
   const [savedAt, setSavedAt] = useState("");
   const [chainConfig, setChainConfig] = useState(() => readAttestationConfig());
   const [aiHealth, setAiHealth] = useState<AiHealthStatus | null>(null);
+  const [operatorSession, setOperatorSession] = useState<OperatorSessionStatus | null>(null);
+  const [operatorToken, setOperatorToken] = useState("");
+  const [operatorBusy, setOperatorBusy] = useState(false);
+  const [operatorError, setOperatorError] = useState("");
   const apiKey = "XAPI_KEY is server-side only";
   const contractValue = chainConfig.contractAddress ?? "not configured";
   const explorerValue = chainConfig.explorerBaseUrl ?? "not configured";
   const environmentValue = chainConfig.contractConfigured ? "Sepolia" : "Fallback";
   const environmentDetail = chainConfig.contractConfigured ? "live contract configured" : "chain writes disabled until contract config exists";
+  const operatorStatus = operatorSession ? operatorStatusMap[operatorSession.mode] : operatorCheckingStatus;
+  const operatorConfigured = operatorSession?.configured ?? true;
+  const operatorAuthenticated = operatorSession?.authenticated ?? false;
 
   useEffect(() => {
     let cancelled = false;
@@ -48,10 +56,79 @@ export function SettingsPage() {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    fetchOperatorSession()
+      .then((session) => {
+        if (!cancelled) setOperatorSession(session);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setOperatorSession({
+            configured: true,
+            authenticated: false,
+            mode: "locked"
+          });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   function saveSettings() {
     const timestamp = new Date().toLocaleTimeString("zh-CN", { hour12: false });
     setSavedAt(timestamp);
     notify("Settings saved");
+  }
+
+  async function refreshAiHealth() {
+    try {
+      setAiHealth(await fetchAiHealth());
+    } catch {
+      setAiHealth(null);
+    }
+  }
+
+  async function handleOpenOperatorSession(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const token = operatorToken.trim();
+    if (!token && operatorConfigured) {
+      setOperatorError("Enter the operator token.");
+      return;
+    }
+
+    setOperatorBusy(true);
+    setOperatorError("");
+    try {
+      const session = await openOperatorSession(token);
+      setOperatorSession(session);
+      setOperatorToken("");
+      notify(session.mode === "unconfigured" ? "Operator guard is unconfigured" : "Operator session opened");
+      await refreshAiHealth();
+    } catch {
+      setOperatorError("Invalid operator token.");
+      notify("Operator session failed");
+    } finally {
+      setOperatorBusy(false);
+    }
+  }
+
+  async function handleCloseOperatorSession() {
+    setOperatorBusy(true);
+    setOperatorError("");
+    try {
+      const session = await closeOperatorSession();
+      setOperatorSession(session);
+      setOperatorToken("");
+      notify(session.mode === "unconfigured" ? "Operator guard is unconfigured" : "Operator session closed");
+      await refreshAiHealth();
+    } catch {
+      setOperatorError("Could not close the operator session.");
+      notify("Operator session update failed");
+    } finally {
+      setOperatorBusy(false);
+    }
   }
 
   return (
@@ -133,16 +210,54 @@ export function SettingsPage() {
           </SettingsCard>
 
           <SettingsCard title="Access and session" icon={Shield}>
-            <div className="flex flex-wrap items-center gap-2">
-              <button className={primaryButtonClass} type="button" onClick={saveSettings}>
-                {savedAt ? <Check aria-hidden className="h-4 w-4" /> : null}
-                Save settings
-              </button>
-              <button className={buttonClass} type="button" onClick={() => notify("Sign out confirmation opened")}>
-                <LogOut aria-hidden className="h-4 w-4" />
-                Log out
-              </button>
-              {savedAt ? <span className="text-sm font-medium text-emerald-700">Saved at {savedAt}</span> : null}
+            <div className="grid gap-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">Operator session</p>
+                  <p className="text-xs text-slate-500">Guarded API routes use an HttpOnly cookie.</p>
+                </div>
+                <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${operatorStatus.className}`}>
+                  {operatorStatus.label}
+                </span>
+              </div>
+
+              {operatorConfigured ? (
+                <form className="grid gap-3 md:grid-cols-[1fr_auto]" onSubmit={handleOpenOperatorSession}>
+                  <label className="grid gap-1">
+                    <span className="text-xs font-medium text-slate-600">Operator token</span>
+                    <input
+                      className={inputClass}
+                      type="password"
+                      value={operatorToken}
+                      onChange={(event) => setOperatorToken(event.target.value)}
+                      placeholder={operatorAuthenticated ? "Session active" : "Enter token"}
+                      autoComplete="current-password"
+                      spellCheck={false}
+                      disabled={operatorBusy || operatorAuthenticated}
+                    />
+                  </label>
+                  <button className={primaryButtonClass} type="submit" disabled={operatorBusy || operatorAuthenticated}>
+                    <LockKeyhole aria-hidden className="h-4 w-4" />
+                    {operatorBusy ? "Opening..." : "Open operator session"}
+                  </button>
+                </form>
+              ) : (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">AGENT_OPERATOR_TOKEN is not configured; guarded routes are open in this environment.</div>
+              )}
+
+              {operatorError ? <p className="text-sm font-medium text-red-700">{operatorError}</p> : null}
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button className={primaryButtonClass} type="button" onClick={saveSettings}>
+                  {savedAt ? <Check aria-hidden className="h-4 w-4" /> : null}
+                  Save settings
+                </button>
+                <button className={buttonClass} type="button" onClick={handleCloseOperatorSession} disabled={operatorBusy || !operatorConfigured}>
+                  <LogOut aria-hidden className="h-4 w-4" />
+                  Close session
+                </button>
+                {savedAt ? <span className="text-sm font-medium text-emerald-700">Saved at {savedAt}</span> : null}
+              </div>
             </div>
           </SettingsCard>
         </div>
@@ -168,3 +283,23 @@ export function SettingsPage() {
 function uniqueOptions(options: string[]) {
   return Array.from(new Set(options));
 }
+
+const operatorCheckingStatus = {
+  label: "Checking",
+  className: "bg-slate-100 text-slate-600"
+};
+
+const operatorStatusMap = {
+  authenticated: {
+    label: "Authenticated",
+    className: "bg-emerald-100 text-emerald-700"
+  },
+  locked: {
+    label: "Locked",
+    className: "bg-red-100 text-red-700"
+  },
+  unconfigured: {
+    label: "Unconfigured",
+    className: "bg-amber-100 text-amber-700"
+  }
+} satisfies Record<OperatorSessionStatus["mode"], typeof operatorCheckingStatus>;

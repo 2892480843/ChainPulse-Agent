@@ -8,7 +8,6 @@ export interface NavigationItem {
 
 export const navigationItems: NavigationItem[] = [
   { key: "workspace", label: "Workspace", path: "/workspace" },
-  { key: "demo", label: "Review Console", path: "/demo" },
   { key: "tasks", label: "Agent Runs", path: "/tasks" },
   { key: "reports", label: "Reports", path: "/reports" },
   { key: "trace", label: "Audit Trace", path: "/trace" },

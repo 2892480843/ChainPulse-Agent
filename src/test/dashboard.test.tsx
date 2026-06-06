@@ -1,6 +1,6 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import AttestationRoute from "@/app/attestation/page";
 import DemoRoute from "@/app/demo/page";
 import ReportsRoute from "@/app/reports/page";
@@ -33,10 +33,22 @@ afterEach(() => {
   routerPush.mockReset();
   vi.restoreAllMocks();
   window.sessionStorage.clear();
+  if (typeof window.localStorage.clear === "function") window.localStorage.clear();
+  delete (window as Window & { ethereum?: unknown }).ethereum;
 });
 
 describe("ChainPulse dashboard", () => {
-  it("renders every app route entry with the expected page title", () => {
+  beforeEach(() => {
+    mockConnectedWallet();
+  });
+
+  async function renderConnected(ui = <DashboardApp />) {
+    const view = render(ui);
+    await screen.findByRole("button", { name: "Wallet connected" });
+    return view;
+  }
+
+  it("renders every app route entry with the expected page title", async () => {
     const routes = [
       ["/workspace", WorkspaceRoute, "Agent Operations"],
       ["/demo", DemoRoute, "Operator Runbook"],
@@ -50,14 +62,14 @@ describe("ChainPulse dashboard", () => {
 
     for (const [routePath, RouteComponent, heading] of routes) {
       pathname = routePath;
-      const view = render(<RouteComponent />);
+      const view = await renderConnected(<RouteComponent />);
       expect(screen.getByRole("heading", { name: heading })).toBeInTheDocument();
       view.unmount();
     }
   });
 
-  it("renders desktop sidebar links with the current route highlighted", () => {
-    render(<DashboardApp />);
+  it("renders desktop sidebar links with the current route highlighted", async () => {
+    await renderConnected();
 
     expect(screen.getByRole("complementary", { name: "Primary navigation" })).toHaveClass("sticky", "top-0", "h-[100dvh]", "overflow-y-auto");
     expect(screen.getByRole("link", { name: "Workspace" })).toHaveAttribute("href", "/workspace");
@@ -71,9 +83,20 @@ describe("ChainPulse dashboard", () => {
     expect(screen.getByRole("link", { name: "Workspace" })).toHaveAttribute("aria-current", "page");
   });
 
-  it("renders the demo flow with the expected route CTAs", () => {
+  it("switches primary navigation between English and Chinese", async () => {
+    const user = userEvent.setup();
+    await renderConnected();
+
+    expect(screen.getByRole("link", { name: "Workspace" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Switch language" }));
+
+    expect(screen.getByRole("link", { name: "工作台" })).toHaveAttribute("href", "/workspace");
+    expect(screen.getByRole("button", { name: "切换语言" })).toHaveTextContent("EN");
+  });
+
+  it("renders the demo flow with the expected route CTAs", async () => {
     pathname = "/demo";
-    render(<DashboardApp />);
+    await renderConnected();
 
     expect(screen.getByRole("heading", { name: "Operator Runbook" })).toBeInTheDocument();
     expect(screen.getByText("Proof Chain Summary")).toBeInTheDocument();
@@ -93,7 +116,7 @@ describe("ChainPulse dashboard", () => {
   it("stores the workspace run context and navigates to running tasks", async () => {
     const user = userEvent.setup();
     vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("offline in test"));
-    render(<DashboardApp />);
+    await renderConnected();
 
     expect(screen.getByText("Run configuration")).toBeInTheDocument();
     expect(screen.getByText("$ETH baseline")).toBeInTheDocument();
@@ -113,7 +136,7 @@ describe("ChainPulse dashboard", () => {
 
   it("shows global search results and opens a report result", async () => {
     const user = userEvent.setup();
-    render(<DashboardApp />);
+    await renderConnected();
 
     await user.type(screen.getByLabelText("全局搜索"), "ETH");
 
@@ -131,7 +154,7 @@ describe("ChainPulse dashboard", () => {
 
   it("shows a global search empty state when no result matches", async () => {
     const user = userEvent.setup();
-    render(<DashboardApp />);
+    await renderConnected();
 
     await user.type(screen.getByLabelText("全局搜索"), "not-a-chainpulse-target");
 
@@ -142,7 +165,7 @@ describe("ChainPulse dashboard", () => {
 
   it("limits global search results to six options", async () => {
     const user = userEvent.setup();
-    render(<DashboardApp />);
+    await renderConnected();
 
     await user.type(screen.getByLabelText("全局搜索"), "a");
 
@@ -151,7 +174,7 @@ describe("ChainPulse dashboard", () => {
 
   it("opens the highlighted global search result from the keyboard", async () => {
     const user = userEvent.setup();
-    render(<DashboardApp />);
+    await renderConnected();
 
     const searchBox = screen.getByLabelText("全局搜索");
     await user.type(searchBox, "ETH");
@@ -163,7 +186,7 @@ describe("ChainPulse dashboard", () => {
   it("filters reports by search, verdict, risk range, and date range", async () => {
     const user = userEvent.setup();
     pathname = "/reports";
-    render(<DashboardApp />);
+    await renderConnected();
 
     await user.type(screen.getByLabelText("搜索报告"), "ZEC");
     await user.selectOptions(screen.getByLabelText("结论"), "CAUTION");
@@ -179,7 +202,7 @@ describe("ChainPulse dashboard", () => {
   it("supports report date range presets and a clearable custom range", async () => {
     const user = userEvent.setup();
     pathname = "/reports";
-    render(<DashboardApp />);
+    await renderConnected();
 
     await user.click(screen.getByRole("button", { name: "今天" }));
     expect(screen.getByText("Showing 2 of 4 reports")).toBeInTheDocument();
@@ -209,7 +232,7 @@ describe("ChainPulse dashboard", () => {
     const user = userEvent.setup();
     pathname = "/reports";
     searchParamsString = "query=ZEC&verdict=CAUTION&minRisk=60";
-    render(<DashboardApp />);
+    await renderConnected();
 
     expect(screen.getByLabelText("搜索报告")).toHaveValue("ZEC");
     expect(screen.getByLabelText("结论")).toHaveValue("CAUTION");
@@ -226,7 +249,7 @@ describe("ChainPulse dashboard", () => {
     const user = userEvent.setup();
     pathname = "/reports";
     searchParamsString = "query=ZEC&verdict=CAUTION&minRisk=60";
-    render(<DashboardApp />);
+    await renderConnected();
 
     expect(screen.getByText("Showing 1 of 4 reports")).toBeInTheDocument();
     expect(screen.getByText("Active filters")).toBeInTheDocument();
@@ -243,13 +266,30 @@ describe("ChainPulse dashboard", () => {
     expect(routerPush).toHaveBeenCalledWith("/reports?status=%E6%9C%AA%E4%B8%8A%E9%93%BE");
   });
 
-  it("filters attestation proof history by date, status, and query", async () => {
-    const user = userEvent.setup();
+  it("locks app operations until a wallet is connected", async () => {
+    delete (window as Window & { ethereum?: unknown }).ethereum;
     pathname = "/attestation";
     render(<DashboardApp />);
 
+    expect(screen.getByRole("heading", { name: "Connect your wallet first" })).toBeInTheDocument();
+    expect(await screen.findByText("Browser wallet missing")).toBeInTheDocument();
+    expect(screen.getByText("Connect wallet to unlock proof actions")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Connect wallet" }).length).toBeGreaterThan(0);
+    expect(screen.queryByText("Receipt summary")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Report")).not.toBeInTheDocument();
+  });
+
+  it("filters attestation proof history by date, status, and query", async () => {
+    const user = userEvent.setup();
+    pathname = "/attestation";
+    mockConnectedWallet();
+    await renderConnected();
+
     expect(screen.getByRole("heading", { name: "Proof Receipts" })).toBeInTheDocument();
-    expect(screen.getByText("Receipt summary")).toBeInTheDocument();
+    expect(await screen.findByText("Receipt summary")).toBeInTheDocument();
+    expect(screen.getByText("Wallet status")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Connected wallet" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Write with connected wallet" })).toBeDisabled();
     expect(screen.getByText("Why on-chain?")).toBeInTheDocument();
     expect(screen.getByText("Verify locally")).toBeInTheDocument();
     expect(screen.getByText("Proof review panel")).toBeInTheDocument();
@@ -282,9 +322,9 @@ describe("ChainPulse dashboard", () => {
     expect(screen.getByLabelText("End date")).toHaveValue("");
   });
 
-  it("renders report detail and handles invalid report ids", () => {
+  it("renders report detail and handles invalid report ids", async () => {
     pathname = "/reports/rep_eth_001";
-    const view = render(
+    const view = await renderConnected(
       <AppShell>
         <ReportDetailPage reportId="rep_eth_001" />
       </AppShell>
@@ -305,10 +345,11 @@ describe("ChainPulse dashboard", () => {
     expect(screen.getByText("xAPI Actions")).toBeInTheDocument();
     expect(screen.getByText("On-chain Attestation")).toBeInTheDocument();
     expect(screen.getAllByText("Report Hash").length).toBeGreaterThan(0);
+    expect(screen.getByRole("link", { name: "Open wallet attestation" })).toHaveAttribute("href", "/attestation?report=rep_eth_001");
     expect(screen.queryByText("Hash proof readiness")).not.toBeInTheDocument();
     view.unmount();
 
-    render(
+    await renderConnected(
       <AppShell>
         <ReportDetailPage reportId="missing_report" />
       </AppShell>
@@ -319,7 +360,7 @@ describe("ChainPulse dashboard", () => {
   it("changes xAPI trace details when selecting another trace", async () => {
     const user = userEvent.setup();
     pathname = "/trace";
-    render(<DashboardApp />);
+    await renderConnected();
 
     expect(within(screen.getByTestId("trace-detail")).getByText("twitter.search_timeline")).toBeInTheDocument();
     expect(screen.getByText("schema-first call")).toBeInTheDocument();
@@ -358,20 +399,20 @@ describe("ChainPulse dashboard", () => {
     expect(screen.getByText("no XAPI_KEY")).toBeInTheDocument();
   });
 
-  it("opens trace and headers from URL query", () => {
+  it("opens trace and headers from URL query", async () => {
     pathname = "/trace";
     searchParamsString = "trace=trace_004&headers=open";
-    render(<DashboardApp />);
+    await renderConnected();
 
     expect(within(screen.getByTestId("trace-detail")).getByText("twitter.tweet_detail")).toBeInTheDocument();
     expect(screen.getByText("schema fetch timeout")).toBeInTheDocument();
     expect(screen.getByText(/xapi-action/)).toBeInTheDocument();
   });
 
-  it("filters traces from the task URL query on first render", () => {
+  it("filters traces from the task URL query on first render", async () => {
     pathname = "/trace";
     searchParamsString = "task=task_eth_risk_001";
-    render(<DashboardApp />);
+    await renderConnected();
 
     expect(within(screen.getByTestId("trace-detail")).getByText("twitter.search_timeline")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /twitter.tweet_detail/ })).not.toBeInTheDocument();
@@ -381,7 +422,7 @@ describe("ChainPulse dashboard", () => {
     const user = userEvent.setup();
     pathname = "/trace";
     searchParamsString = "trace=trace_004";
-    render(<DashboardApp />);
+    await renderConnected();
 
     await user.click(screen.getByRole("button", { name: /Headers/ }));
 
@@ -391,7 +432,7 @@ describe("ChainPulse dashboard", () => {
   it("navigates from running task to trace and keeps logs marked for auto-scroll", async () => {
     const user = userEvent.setup();
     pathname = "/tasks";
-    render(<DashboardApp />);
+    await renderConnected();
 
     await user.click(screen.getByRole("button", { name: "View Trace" }));
     expect(routerPush).toHaveBeenCalledWith("/trace?task=task_eth_risk_001");
@@ -402,8 +443,8 @@ describe("ChainPulse dashboard", () => {
     expect(logRegion).toHaveAttribute("data-log-count", "6");
   });
 
-  it("links workspace recent report titles to report detail pages", () => {
-    render(<DashboardApp />);
+  it("links workspace recent report titles to report detail pages", async () => {
+    await renderConnected();
 
     expect(screen.getByRole("link", { name: /ETH Risk Baseline/ })).toHaveAttribute("href", "/reports/rep_eth_001");
   });
@@ -411,7 +452,7 @@ describe("ChainPulse dashboard", () => {
   it("toggles the settings API key visibility and shows save time", async () => {
     const user = userEvent.setup();
     pathname = "/settings";
-    render(<DashboardApp />);
+    await renderConnected();
 
     const apiKeyInput = screen.getByLabelText("xAPI Key");
     expect(apiKeyInput).toHaveAttribute("type", "password");
@@ -421,10 +462,92 @@ describe("ChainPulse dashboard", () => {
     expect(screen.getByText(/Saved at \d{2}:\d{2}:\d{2}/)).toBeInTheDocument();
   });
 
+  function mockConnectedWallet() {
+    Object.defineProperty(window, "ethereum", {
+      configurable: true,
+      value: {
+        chainId: "0xaa36a7",
+        selectedAddress: "0x0000000000000000000000000000000000000002",
+        request: vi.fn(async ({ method }: { method: string }) => {
+          if (method === "eth_accounts" || method === "eth_requestAccounts") return ["0x0000000000000000000000000000000000000002"];
+          if (method === "eth_chainId") return "0xaa36a7";
+          return null;
+        }),
+        on: vi.fn(),
+        removeListener: vi.fn()
+      }
+    });
+  }
+
+  it("opens an operator session from settings without keeping the token visible", async () => {
+    const user = userEvent.setup();
+    pathname = "/settings";
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.includes("/api/ai/health")) {
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            data: {
+              provider: "openai",
+              model: "gpt-4.1-mini",
+              baseUrl: "https://api.openai.com/v1",
+              enabled: true,
+              configured: false,
+              mode: "disabled"
+            }
+          })
+        );
+      }
+      if (url.includes("/api/operator/session") && init?.method === "POST") {
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            data: {
+              configured: true,
+              authenticated: true,
+              mode: "authenticated"
+            }
+          })
+        );
+      }
+      if (url.includes("/api/operator/session")) {
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            data: {
+              configured: true,
+              authenticated: false,
+              mode: "locked"
+            }
+          })
+        );
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+
+    await renderConnected();
+
+    expect(await screen.findByText("Locked")).toBeInTheDocument();
+    await user.type(screen.getByLabelText("Operator token"), "test-operator-token");
+    await user.click(screen.getByRole("button", { name: "Open operator session" }));
+
+    expect(await screen.findByText("Authenticated")).toBeInTheDocument();
+    expect(screen.getByLabelText("Operator token")).toHaveValue("");
+    expect(screen.queryByDisplayValue("test-operator-token")).not.toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/operator/session",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "same-origin"
+      })
+    );
+  });
+
   it("adds a watchlist target and highlights it", async () => {
     const user = userEvent.setup();
     pathname = "/watchlist";
-    render(<DashboardApp />);
+    await renderConnected();
 
     await user.click(screen.getByRole("button", { name: "添加监控目标" }));
     await user.clear(screen.getByLabelText("新监控目标"));
@@ -438,7 +561,7 @@ describe("ChainPulse dashboard", () => {
     const user = userEvent.setup();
     pathname = "/watchlist";
     searchParamsString = "target=wl_curve";
-    render(<DashboardApp />);
+    await renderConnected();
 
     const curveRow = screen.getByTestId("watchlist-row-Curve");
     expect(curveRow).toHaveAttribute("data-highlighted", "true");

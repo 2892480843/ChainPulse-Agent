@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createRuntimeTrace, redactSensitive } from "@/lib/server/xapi-trace";
-import { fallbackActionSchema, fallbackCallResult, fallbackSearchActions, normalizeCallOutput, normalizeSchemaOutput, normalizeSearchOutput } from "@/lib/server/xapi-normalize";
+import { normalizeCallOutput, normalizeSchemaOutput, normalizeSearchOutput } from "@/lib/server/xapi-normalize";
 import type { XApiActionSchema, XApiActionSearchResult, XApiCallResult, XApiHealthStatus, XApiRouteError, XApiServiceResult } from "@/lib/xapi-types";
 
 const execFileAsync = promisify(execFile);
@@ -38,8 +38,7 @@ export function createXApiService(options: XApiServiceOptions = {}): XApiService
     capability,
     input,
     taskId,
-    normalize,
-    fallback
+    normalize
   }: {
     args: string[];
     action: string;
@@ -47,23 +46,19 @@ export function createXApiService(options: XApiServiceOptions = {}): XApiService
     input: Record<string, unknown>;
     taskId?: string;
     normalize: (raw: unknown) => T;
-    fallback: () => T;
   }): Promise<XApiServiceResult<T>> {
     const startedAt = Date.now();
 
     if (!apiKey) {
-      const data = fallback();
       return {
-        ok: true,
+        ok: false,
         mode: "unconfigured",
-        data,
         trace: createRuntimeTrace({
           taskId,
           action,
           capability,
-          status: "fallback",
+          status: "failed",
           input,
-          output: data,
           startedAt,
           error: "no XAPI_KEY configured"
         }),
@@ -101,18 +96,15 @@ export function createXApiService(options: XApiServiceOptions = {}): XApiService
       };
     } catch (error) {
       const safeMessage = redactSensitive(error, [apiKey]);
-      const data = fallback();
       return {
-        ok: true,
+        ok: false,
         mode: "fallback",
-        data,
         trace: createRuntimeTrace({
           taskId,
           action,
           capability,
-          status: "fallback",
+          status: "failed",
           input,
-          output: data,
           startedAt,
           error: safeMessage
         }),
@@ -134,13 +126,6 @@ export function createXApiService(options: XApiServiceOptions = {}): XApiService
           upstreamAvailable: true,
           cli: "available",
           message: "xAPI CLI health check completed"
-        }),
-        fallback: () => ({
-          configured: Boolean(apiKey),
-          host,
-          upstreamAvailable: false,
-          cli: apiKey ? "unavailable" : "skipped",
-          message: apiKey ? "xAPI CLI health check failed" : "no XAPI_KEY configured"
         })
       });
     },
@@ -151,8 +136,7 @@ export function createXApiService(options: XApiServiceOptions = {}): XApiService
         action: "xapi.search",
         capability: "xAPI",
         input: { query },
-        normalize: (raw) => normalizeSearchOutput(raw, query),
-        fallback: () => fallbackSearchActions(query)
+        normalize: (raw) => normalizeSearchOutput(raw, query)
       });
     },
 
@@ -162,8 +146,7 @@ export function createXApiService(options: XApiServiceOptions = {}): XApiService
         action: actionId,
         capability: "Schema Discovery",
         input: { action: actionId },
-        normalize: (raw) => normalizeSchemaOutput(actionId, raw),
-        fallback: () => fallbackActionSchema(actionId)
+        normalize: (raw) => normalizeSchemaOutput(actionId, raw)
       });
     },
 
@@ -171,18 +154,15 @@ export function createXApiService(options: XApiServiceOptions = {}): XApiService
       const startedAt = Date.now();
 
       if (!apiKey) {
-        const data = fallbackCallResult(actionId, input);
         return {
-          ok: true,
+          ok: false,
           mode: "unconfigured",
-          data,
           trace: createRuntimeTrace({
             taskId,
             action: actionId,
-            capability: data.capability,
-            status: "fallback",
+            capability: inferCapability(actionId),
+            status: "failed",
             input,
-            output: data,
             startedAt,
             error: "no XAPI_KEY configured"
           }),
@@ -230,18 +210,15 @@ export function createXApiService(options: XApiServiceOptions = {}): XApiService
         };
       } catch (error) {
         const safeMessage = redactSensitive(error, [apiKey]);
-        const data = fallbackCallResult(actionId, input);
         return {
-          ok: true,
+          ok: false,
           mode: "fallback",
-          data,
           trace: createRuntimeTrace({
             taskId,
             action: actionId,
-            capability: data.capability,
-            status: "fallback",
+            capability: inferCapability(actionId),
+            status: "failed",
             input,
-            output: data,
             startedAt,
             error: safeMessage
           }),
@@ -275,4 +252,16 @@ function upstreamError(message: string): XApiRouteError {
     message,
     recoverable: true
   };
+}
+
+function inferCapability(action: string) {
+  const prefix = action.split(".")[0];
+  const map: Record<string, string> = {
+    ai: "AI",
+    crypto: "Crypto",
+    news: "News",
+    twitter: "Twitter / X",
+    web: "Web"
+  };
+  return map[prefix] ?? "xAPI";
 }

@@ -1,8 +1,7 @@
-import { xapiTraces } from "@/lib/mock-data";
 import type { AgentAiAudit } from "@/lib/ai-types";
 import type { AgentRunApiResponse } from "@/lib/agent-types";
 import type { Report, RunningTask, SourceMode, WorkspaceRunContext, XApiTrace } from "@/lib/types";
-import type { XApiActionSchema, XApiActionSearchResult, XApiCallResult, XApiHealthStatus, XApiRouteMode, XApiRouteResponse } from "@/lib/xapi-types";
+import type { XApiActionSchema, XApiActionSearchResult, XApiCallResult, XApiHealthStatus, XApiRouteError, XApiRouteMode, XApiRouteResponse } from "@/lib/xapi-types";
 
 export interface XApiClient {
   searchActions(query: string): Promise<string[]>;
@@ -19,7 +18,7 @@ export interface XApiRouteClient {
 }
 
 export interface XApiRuntimeSnapshot {
-  label: "live xAPI" | "partial xAPI" | "mock fallback";
+  label: "live xAPI" | "partial xAPI" | "unavailable";
   reason: "connected" | "partial fallback" | "no XAPI_KEY" | "upstream failed" | "checking xAPI";
   response?: XApiRouteResponse<XApiHealthStatus>;
 }
@@ -45,41 +44,6 @@ export const workspaceRunStorageKeys = {
   traces: "chainpulse:last-run-traces",
   result: "chainpulse:last-run-result"
 } as const;
-
-export const mockXApiClient: XApiClient = {
-  async searchActions(query) {
-    const normalized = query.trim().toLowerCase();
-    return xapiTraces
-      .filter((trace) => normalized.length === 0 || trace.action.toLowerCase().includes(normalized) || trace.capability.toLowerCase().includes(normalized))
-      .map((trace) => trace.action);
-  },
-
-  async getActionSchema(action) {
-    return {
-      action,
-      schemaVersion: "2026-05",
-      input: {
-        query: "string",
-        limit: "number",
-        freshness: "string"
-      },
-      note: "Replace this mock schema with the server-side xAPI schema discovery response when XAPI_KEY is configured."
-    };
-  },
-
-  async callAction(action, input) {
-    const trace = xapiTraces.find((item) => item.action === action) ?? xapiTraces[0];
-    return {
-      ...trace,
-      input
-    };
-  },
-
-  async getTrace(taskId) {
-    const traces = xapiTraces.filter((trace) => trace.taskId === taskId);
-    return traces.length > 0 ? [...traces, ...xapiTraces.filter((trace) => trace.status === "failed")] : xapiTraces;
-  }
-};
 
 export const routeXApiClient: XApiRouteClient = {
   async healthCheck() {
@@ -117,13 +81,13 @@ export async function getXApiRuntimeSnapshot(): Promise<XApiRuntimeSnapshot> {
     }
 
     return {
-      label: "mock fallback",
+      label: "unavailable",
       reason: response.mode === "unconfigured" ? "no XAPI_KEY" : "upstream failed",
       response
     };
   } catch {
     return {
-      label: "mock fallback",
+      label: "unavailable",
       reason: "upstream failed"
     };
   }
@@ -131,64 +95,7 @@ export async function getXApiRuntimeSnapshot(): Promise<XApiRuntimeSnapshot> {
 
 export async function runWorkspaceAgent(context: WorkspaceRunContext): Promise<WorkspaceAgentRunResult> {
   const taskId = context.taskId ?? createWorkspaceTaskId();
-  const query = normalizeTopicQuery(context.topic);
-
-  try {
-    const serverRun = await runWorkspaceAgentOnServer({ ...context, taskId });
-    return serverRun;
-  } catch {
-    // Keep the browser-only fallback path available for offline demos and route test failures.
-  }
-
-  try {
-    const health = await routeXApiClient.healthCheck();
-    const search = await routeXApiClient.searchActions(query);
-    const action = search.data?.[0]?.action ?? selectFallbackAction(query);
-    const schema = await routeXApiClient.getActionSchema(action);
-    const callInput = buildActionInput(context, schema.data);
-    const call = await routeXApiClient.callAction(action, callInput, taskId);
-    const responses = [
-      { response: health, fallbackAction: "xapi.health", fallbackCapability: "xAPI", method: "GET" as const, schemaFetched: false },
-      { response: search, fallbackAction: "xapi.search", fallbackCapability: "xAPI", method: "GET" as const, schemaFetched: false },
-      { response: schema, fallbackAction: action, fallbackCapability: "Schema Discovery", method: "GET" as const, schemaFetched: true },
-      { response: call, fallbackAction: action, fallbackCapability: call.data?.capability ?? "xAPI", method: "POST" as const, schemaFetched: true }
-    ];
-    const traces = responses.map((item) =>
-      routeResponseToTrace({
-        ...item,
-        taskId,
-        mode: item.response.mode
-      })
-    );
-    const label = resolveRunLabel(responses.map((item) => item.response.mode));
-    const reason = resolveRunReason(responses.map((item) => item.response));
-    const logs = createRunLogs(context, label, reason, action, true, traces);
-
-    return {
-      taskId,
-      context: {
-        ...context,
-        taskId,
-        runtimeLabel: label,
-        runtimeReason: reason,
-        schemaFirst: true,
-        traceIds: traces.map((trace) => trace.id),
-        runtimeLogs: logs,
-        sourceMode: label === "live xAPI" ? "live" : label === "partial xAPI" ? "partial" : "fallback"
-      },
-      label,
-      reason,
-      mode: label === "live xAPI" ? "live" : label === "partial xAPI" ? "fallback" : health.mode,
-      action,
-      schemaFirst: true,
-      traces,
-      logs,
-      sourceMode: label === "live xAPI" ? "live" : label === "partial xAPI" ? "partial" : "fallback"
-    };
-  } catch (error) {
-    const fallback = createOfflineFallbackRun(context, taskId, error);
-    return fallback;
-  }
+  return runWorkspaceAgentOnServer({ ...context, taskId });
 }
 
 async function runWorkspaceAgentOnServer(context: WorkspaceRunContext): Promise<WorkspaceAgentRunResult> {
@@ -201,18 +108,17 @@ async function runWorkspaceAgentOnServer(context: WorkspaceRunContext): Promise<
     cache: "no-store"
   });
 
-  if (!response.ok) {
-    throw new Error(`agent run failed: ${response.status}`);
-  }
-
   const body = (await response.json()) as AgentRunApiResponse;
+  if (!response.ok) {
+    throw new AgentRunError(body.error ?? { code: "AGENT_RUN_FAILED", message: `agent run failed: ${response.status}`, recoverable: true });
+  }
   if (!body.ok || !body.data) {
-    throw new Error(body.error?.message ?? "agent run failed");
+    throw new AgentRunError(body.error ?? { code: "AGENT_RUN_FAILED", message: "agent run failed", recoverable: true });
   }
 
   const run = body.data;
   const action = run.traces.find((trace) => trace.method === "POST" && !trace.action.startsWith("xapi."))?.action ?? "xapi.agent";
-  const label: XApiRuntimeSnapshot["label"] = run.sourceMode === "live" ? "live xAPI" : run.sourceMode === "partial" ? "partial xAPI" : "mock fallback";
+  const label: XApiRuntimeSnapshot["label"] = run.sourceMode === "live" ? "live xAPI" : run.sourceMode === "partial" ? "partial xAPI" : "unavailable";
   const reason: XApiRuntimeSnapshot["reason"] = run.context.runtimeReason ?? (run.sourceMode === "live" ? "connected" : run.sourceMode === "partial" ? "partial fallback" : "upstream failed");
 
   return {
@@ -269,12 +175,6 @@ function createWorkspaceTaskId() {
 
 function normalizeTopicQuery(topic: string) {
   return topic.trim().replace(/^\$/, "") || "ETH";
-}
-
-function selectFallbackAction(query: string) {
-  const normalized = query.toLowerCase();
-  const trace = xapiTraces.find((item) => item.action.includes("price") && normalized.includes("eth")) ?? xapiTraces[0];
-  return trace.action;
 }
 
 function buildActionInput(context: WorkspaceRunContext, schema?: XApiActionSchema): Record<string, unknown> {
@@ -365,7 +265,7 @@ function resolveRunLabel(modes: XApiRouteMode[]): XApiRuntimeSnapshot["label"] {
   const liveCount = modes.filter((mode) => mode === "live").length;
   if (liveCount === modes.length) return "live xAPI";
   if (liveCount > 0) return "partial xAPI";
-  return "mock fallback";
+  return "unavailable";
 }
 
 function createRunLogs(context: WorkspaceRunContext, label: XApiRuntimeSnapshot["label"], reason: XApiRuntimeSnapshot["reason"], action: string, schemaFirst: boolean, traces: XApiTrace[]) {
@@ -380,59 +280,11 @@ function createRunLogs(context: WorkspaceRunContext, label: XApiRuntimeSnapshot[
   ];
 }
 
-function createOfflineFallbackRun(context: WorkspaceRunContext, taskId: string, error: unknown): WorkspaceAgentRunResult {
-  const fallbackTraces = xapiTraces
-    .filter((trace) => trace.taskId === "task_eth_risk_001")
-    .slice(0, 3)
-    .map((trace, index) => ({
-      ...trace,
-      id: `cp-xapi-offline-${index + 1}`,
-      taskId,
-      status: "fallback" as const,
-      outputPreview: `mock fallback: ${trace.outputPreview}`,
-      sourceMode: "fallback" as const,
-      headers: {
-        ...trace.headers,
-        "xapi-runtime-mode": "fallback",
-        "schema-first": trace.schemaFetched ? "yes" : "no"
-      },
-      error: index === 0 ? formatFallbackError(error) : trace.error
-    }));
-  const action = fallbackTraces[0]?.action ?? "twitter.search_timeline";
-  const logs = createRunLogs(context, "mock fallback", "upstream failed", action, true, fallbackTraces);
-
-  return {
-    taskId,
-    context: {
-      ...context,
-      taskId,
-      runtimeLabel: "mock fallback",
-      runtimeReason: "upstream failed",
-      schemaFirst: true,
-      traceIds: fallbackTraces.map((trace) => trace.id),
-      runtimeLogs: logs,
-      sourceMode: "fallback"
-    },
-    label: "mock fallback",
-    reason: "upstream failed",
-    mode: "fallback",
-    action,
-    schemaFirst: true,
-    traces: fallbackTraces,
-    logs,
-    sourceMode: "fallback"
-  };
-}
-
 function formatTraceTime(timestamp?: string) {
   if (!timestamp) return new Date().toLocaleTimeString("zh-CN", { hour12: false });
   const date = new Date(timestamp);
   if (Number.isNaN(date.getTime())) return timestamp;
   return date.toLocaleTimeString("zh-CN", { hour12: false });
-}
-
-function formatFallbackError(error: unknown) {
-  return error instanceof Error ? error.message.slice(0, 160) : String(error).slice(0, 160);
 }
 
 function isCallResult(value: unknown): value is XApiCallResult {
@@ -448,3 +300,15 @@ function isHealthResult(value: unknown): value is XApiHealthStatus {
 }
 
 const zeroHash = "0x0000000000000000000000000000000000000000000000000000000000000000";
+
+export class AgentRunError extends Error {
+  code: string;
+  recoverable: boolean;
+
+  constructor(error: { code: string; message: string; recoverable?: boolean }) {
+    super(error.message);
+    this.name = "AgentRunError";
+    this.code = error.code;
+    this.recoverable = error.recoverable ?? true;
+  }
+}
