@@ -1,4 +1,4 @@
-export type PageKey = "workspace" | "tasks" | "reports" | "trace" | "attestation" | "watchlist" | "settings";
+export type PageKey = "workspace" | "demo" | "tasks" | "reports" | "trace" | "attestation" | "watchlist" | "settings";
 
 export type ScanMode = "Alpha Scan" | "Risk Scan" | "DAO 尽调";
 
@@ -6,7 +6,7 @@ export type Verdict = "POSITIVE" | "OBSERVE" | "CAUTION" | "NEGATIVE";
 
 export type ReportStatus = "已完成" | "已上链" | "未上链";
 
-export type TraceStatus = "success" | "failed" | "running";
+export type TraceStatus = "success" | "failed" | "running" | "fallback";
 
 export interface EvidenceItem {
   id: string;
@@ -38,7 +38,7 @@ export interface RunningTask {
   id: string;
   topic: string;
   mode: ScanMode;
-  status: "Running" | "Completed" | "Failed";
+  status: "Running" | "Completed" | "Failed" | "Cancelled";
   startedAt: string;
   elapsed: string;
   progress: number;
@@ -82,8 +82,11 @@ export interface ReportFilters {
   query: string;
   mode: "All" | ScanMode;
   verdict: "All" | Verdict;
+  status: "All" | ReportStatus;
   minRisk: number;
   maxRisk: number;
+  startDate: string;
+  endDate: string;
 }
 
 export interface WatchlistFilters {
@@ -91,4 +94,23 @@ export interface WatchlistFilters {
   category: "All" | WatchlistTarget["category"];
   alertState: "All" | WatchlistTarget["alertState"];
   sortBy: "risk-desc" | "alpha-desc" | "recent";
+}
+
+export interface WorkspaceAdvancedFilters {
+  evidenceWindow: "24h" | "7d" | "30d";
+  minimumConfidence: "0.65" | "0.75" | "0.85";
+  xapiClasses: "Twitter + Web + News + Crypto" | "Web + News + AI" | "Crypto + AI";
+}
+
+export interface WorkspaceRunContext {
+  taskId?: string;
+  topic: string;
+  mode: ScanMode;
+  advancedFilters: WorkspaceAdvancedFilters;
+  createdAt: string;
+  runtimeLabel?: "live xAPI" | "mock fallback";
+  runtimeReason?: "connected" | "no XAPI_KEY" | "upstream failed" | "checking xAPI";
+  schemaFirst?: boolean;
+  traceIds?: string[];
+  runtimeLogs?: string[];
 }

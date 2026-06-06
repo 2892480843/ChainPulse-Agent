@@ -9,9 +9,15 @@ export function filterReports(items: Report[], filters: ReportFilters): Report[]
       includesText(`${report.title} ${report.topic} ${report.summary}`, filters.query);
     const modeMatch = filters.mode === "All" || report.mode === filters.mode;
     const verdictMatch = filters.verdict === "All" || report.verdict === filters.verdict;
-    const riskMatch = report.riskScore >= filters.minRisk && report.riskScore <= filters.maxRisk;
+    const statusMatch = filters.status === "All" || report.status === filters.status;
+    const minRisk = clampRisk(filters.minRisk);
+    const maxRisk = clampRisk(filters.maxRisk);
+    const riskMatch = report.riskScore >= Math.min(minRisk, maxRisk) && report.riskScore <= Math.max(minRisk, maxRisk);
+    const reportDate = report.createdAt.slice(0, 10);
+    const startMatch = filters.startDate.length === 0 || reportDate >= filters.startDate;
+    const endMatch = filters.endDate.length === 0 || reportDate <= filters.endDate;
 
-    return queryMatch && modeMatch && verdictMatch && riskMatch;
+    return queryMatch && modeMatch && verdictMatch && statusMatch && riskMatch && startMatch && endMatch;
   });
 }
 
@@ -31,4 +37,9 @@ export function filterWatchlist(items: WatchlistTarget[], filters: WatchlistFilt
     if (filters.sortBy === "recent") return a.lastScan.localeCompare(b.lastScan);
     return b.riskScore - a.riskScore;
   });
+}
+
+export function clampRisk(value: number): number {
+  if (Number.isNaN(value)) return 0;
+  return Math.min(100, Math.max(0, value));
 }
