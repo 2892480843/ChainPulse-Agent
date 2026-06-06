@@ -77,6 +77,39 @@ const judgeNotes = [
   }
 ];
 
+const scorecardItems = [
+  {
+    label: "Agent workflow",
+    status: "ready",
+    detail: "Workspace run now captures health, search, schema discovery, call, runtime traces, and report handoff."
+  },
+  {
+    label: "xAPI integration",
+    status: "live/fallback transparent",
+    detail: "Server route keeps XAPI_KEY private; UI labels live xAPI, no XAPI_KEY, or upstream fallback."
+  },
+  {
+    label: "Evidence traceability",
+    status: "ready",
+    detail: "Evidence cards point to source action, weight, contribution, and related xAPI Trace."
+  },
+  {
+    label: "Local hash verification",
+    status: "ready",
+    detail: "Report JSON and evidence packet are deterministically hashed and compared in the browser."
+  },
+  {
+    label: "On-chain readiness",
+    status: "wallet/contract gated",
+    detail: "No contract address means not configured; contract + wallet unlocks the viem transaction path."
+  },
+  {
+    label: "Test/build readiness",
+    status: "gated",
+    detail: "lint, typecheck, test, and build are the final acceptance commands before demo."
+  }
+];
+
 export function DemoPage() {
   const { copyText } = useAppActions();
   const ethReport = reports[0];
@@ -134,6 +167,27 @@ export function DemoPage() {
         attested
         compact
       />
+
+      <div className={clsx(cardClass, "p-4 sm:p-5")}>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-950">100-point judge checklist</h2>
+            <p className="mt-1 text-xs leading-5 text-slate-500">用评委口径自检：不是 mock UI，而是可解释、可审计、可复算、可配置真实链上证明的 Agent 原型。</p>
+          </div>
+          <span className="w-fit rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-100">demo gate</span>
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {scorecardItems.map((item) => (
+            <div key={item.label} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-semibold text-slate-950">{item.label}</p>
+                <span className="rounded-full bg-white px-2 py-1 text-[11px] font-semibold text-blue-700 ring-1 ring-blue-100">{item.status}</span>
+              </div>
+              <p className="mt-2 text-xs leading-5 text-slate-600">{item.detail}</p>
+            </div>
+          ))}
+        </div>
+      </div>
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
         <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-5">

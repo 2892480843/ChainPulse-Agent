@@ -6,7 +6,7 @@ export type Verdict = "POSITIVE" | "OBSERVE" | "CAUTION" | "NEGATIVE";
 
 export type ReportStatus = "已完成" | "已上链" | "未上链";
 
-export type TraceStatus = "success" | "failed" | "running";
+export type TraceStatus = "success" | "failed" | "running" | "fallback";
 
 export interface EvidenceItem {
   id: string;
@@ -103,8 +103,14 @@ export interface WorkspaceAdvancedFilters {
 }
 
 export interface WorkspaceRunContext {
+  taskId?: string;
   topic: string;
   mode: ScanMode;
   advancedFilters: WorkspaceAdvancedFilters;
   createdAt: string;
+  runtimeLabel?: "live xAPI" | "mock fallback";
+  runtimeReason?: "connected" | "no XAPI_KEY" | "upstream failed" | "checking xAPI";
+  schemaFirst?: boolean;
+  traceIds?: string[];
+  runtimeLogs?: string[];
 }

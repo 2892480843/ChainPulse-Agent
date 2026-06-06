@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import clsx from "clsx";
 import { ArrowRight, FileCheck2, Gauge, Loader2, Network, Play, ShieldCheck, SlidersHorizontal } from "lucide-react";
+import { persistWorkspaceRun, runWorkspaceAgent, type WorkspaceAgentRunResult } from "@/lib/adapters/xapi-client";
 import { reports } from "@/lib/mock-data";
 import { defaultWorkspaceAdvancedFilters, modeOptions } from "@/lib/navigation";
 import type { ScanMode, WorkspaceAdvancedFilters, WorkspaceRunContext } from "@/lib/types";
@@ -18,7 +19,6 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { TokenIcon } from "@/components/ui/TokenIcon";
 import { buttonClass, cardClass, inputClass, primaryButtonClass } from "@/components/ui/styles";
 
-const storageKey = "chainpulse:last-run";
 const quickCases = [
   { label: "ETH 风险基线", query: "$ETH", detail: "稳定资产热度 + Trace + Report + Attestation", badge: "$ETH 推荐演示路径" },
   { label: "ZEC 流动性提醒", query: "$ZEC", detail: "隐私币新闻与社交集中度" },
@@ -31,13 +31,14 @@ export function WorkspacePage() {
   const [workspaceInput, setWorkspaceInput] = useState("$ETH");
   const [selectedMode, setSelectedMode] = useState<ScanMode>("Risk Scan");
   const [isRunning, setIsRunning] = useState(false);
+  const [lastRun, setLastRun] = useState<WorkspaceAgentRunResult | null>(null);
   const [advancedFilters, setAdvancedFilters] = useState<WorkspaceAdvancedFilters>(defaultWorkspaceAdvancedFilters);
 
   function updateAdvancedFilter<Key extends keyof WorkspaceAdvancedFilters>(key: Key, value: WorkspaceAdvancedFilters[Key]) {
     setAdvancedFilters((current) => ({ ...current, [key]: value }));
   }
 
-  function runAgent() {
+  async function runAgent() {
     setIsRunning(true);
     const context: WorkspaceRunContext = {
       topic: workspaceInput || "ETH",
@@ -47,16 +48,22 @@ export function WorkspacePage() {
     };
     let persisted = true;
     try {
-      window.sessionStorage.setItem(storageKey, JSON.stringify(context));
+      const result = await runWorkspaceAgent(context);
+      persistWorkspaceRun(result);
+      setLastRun(result);
+      notify(result.label === "live xAPI" ? "live xAPI run 已完成" : `${result.reason} / mock fallback run 已保存`);
+      router.push(`/tasks?task=${result.taskId}`);
     } catch {
       persisted = false;
+      notify("任务已创建，本地运行上下文未保存");
+      router.push("/tasks");
+    } finally {
+      setIsRunning(false);
     }
-    notify(persisted ? "任务已创建" : "任务已创建，本地运行上下文未保存");
-    window.setTimeout(() => setIsRunning(false), 450);
-    router.push("/tasks");
+    return persisted;
   }
 
-  function fillQuickCase(value: string) {
+function fillQuickCase(value: string) {
     setWorkspaceInput(value);
     notify("已填充快速案例");
   }
@@ -80,7 +87,9 @@ export function WorkspacePage() {
               </div>
               <p className="mt-2 text-sm leading-6 text-slate-600">把路演输入收敛成一个可复核 run context：目标、模式、证据窗口、置信度阈值和 xAPI 能力范围。</p>
             </div>
-            <span className="w-fit rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-100">mock run context</span>
+            <span className={clsx("w-fit rounded-full px-2.5 py-1 text-xs font-semibold ring-1", lastRun?.label === "live xAPI" ? "bg-emerald-50 text-emerald-700 ring-emerald-100" : "bg-amber-50 text-amber-700 ring-amber-100")}>
+              {lastRun?.label ?? "mock fallback"}
+            </span>
           </div>
           <div className="grid gap-4">
             <label className="grid gap-2">
@@ -162,11 +171,22 @@ export function WorkspacePage() {
               </div>
             </div>
             <div className="grid gap-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-3 text-xs text-blue-900 md:grid-cols-[1fr_auto] md:items-center">
-              <p>
-                当前 mock run：<span className="font-semibold">{workspaceInput || "ETH"}</span> / {selectedMode} / {advancedFilters.evidenceWindow} / confidence {advancedFilters.minimumConfidence}
-              </p>
-              <span className="mono w-fit rounded-full bg-white px-2 py-1 text-[11px] text-blue-700 ring-1 ring-blue-100">sessionStorage preview</span>
+              <div className="grid gap-1">
+                <p>Run Agent 会执行 health -&gt; search -&gt; schema -&gt; call</p>
+                <p>
+                  当前输入：<span className="font-semibold">{workspaceInput || "ETH"}</span> / {selectedMode} / {advancedFilters.evidenceWindow} / confidence {advancedFilters.minimumConfidence}
+                </p>
+              </div>
+              <span className="mono w-fit rounded-full bg-white px-2 py-1 text-[11px] text-blue-700 ring-1 ring-blue-100">schema-first run</span>
             </div>
+            {lastRun ? (
+              <div className={clsx("grid gap-2 rounded-lg border px-3 py-3 text-xs md:grid-cols-4", lastRun.label === "live xAPI" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-800")}>
+                <RunFact label="Runtime" value={lastRun.label === "mock fallback" ? "fallback run" : lastRun.label} />
+                <RunFact label="Reason" value={lastRun.reason} />
+                <RunFact label="Action" value={lastRun.action} />
+                <RunFact label="Trace" value={`${lastRun.traces.length} steps`} />
+              </div>
+            ) : null}
             <div className="flex flex-wrap gap-2">
               <button className={primaryButtonClass} type="button" onClick={runAgent} disabled={isRunning}>
                 {isRunning ? <Loader2 aria-hidden className="h-4 w-4 animate-spin" /> : <Play aria-hidden className="h-4 w-4" />}
@@ -249,5 +269,14 @@ export function WorkspacePage() {
         </div>
       </div>
     </section>
+  );
+}
+
+function RunFact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg bg-white/70 px-2.5 py-2 ring-1 ring-white/70">
+      <p className="text-[11px] font-semibold uppercase opacity-70">{label}</p>
+      <p className="mono mt-1 truncate text-xs font-semibold">{value}</p>
+    </div>
   );
 }

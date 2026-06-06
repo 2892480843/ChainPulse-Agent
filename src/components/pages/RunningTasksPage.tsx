@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import clsx from "clsx";
 import { Database, FileText, Network, Plus, Radio, RefreshCcw, ShieldCheck, Timer, X } from "lucide-react";
+import { workspaceRunStorageKeys } from "@/lib/adapters/xapi-client";
 import { reports, runningTasks } from "@/lib/mock-data";
 import { timelineSteps } from "@/lib/navigation";
 import type { RunningTask, WorkspaceRunContext } from "@/lib/types";
@@ -17,7 +18,6 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { TokenIcon } from "@/components/ui/TokenIcon";
 import { buttonClass, cardClass, selectedButtonClass } from "@/components/ui/styles";
 
-const storageKey = "chainpulse:last-run";
 const timelineMeaning: Record<string, string> = {
   "任务解析": "Turns a human target into structured Agent intent.",
   "xAPI 搜索": "Discovers which external actions can provide evidence.",
@@ -232,7 +232,7 @@ export function RunningTasksPage() {
 
 function readStoredRun(): WorkspaceRunContext | null {
   if (typeof window === "undefined") return null;
-  const raw = window.sessionStorage.getItem(storageKey);
+  const raw = window.sessionStorage.getItem(workspaceRunStorageKeys.context);
   if (!raw) return null;
 
   try {
@@ -249,11 +249,12 @@ function createInitialTask(latestRun: WorkspaceRunContext | null, taskId: string
 
   return {
     ...runningTasks[0],
+    id: latestRun.taskId ?? runningTasks[0].id,
     topic: latestRun.topic,
     mode: latestRun.mode,
     status: "Running",
-    progress: 18,
-    currentStep: "xAPI 搜索",
+    progress: latestRun.schemaFirst ? 44 : 18,
+    currentStep: latestRun.schemaFirst ? "数据采集" : "xAPI 搜索",
     startedAt: `2026-06-05 ${latestRun.createdAt}`,
     elapsed: "00m 12s"
   };
@@ -261,6 +262,7 @@ function createInitialTask(latestRun: WorkspaceRunContext | null, taskId: string
 
 function createInitialLogs(latestRun: WorkspaceRunContext | null): string[] {
   if (!latestRun) return runningTasks[0].logs;
+  if (latestRun.runtimeLogs?.length) return latestRun.runtimeLogs;
 
   return [
     `[${latestRun.createdAt}] Intent Parser resolved topic=${latestRun.topic} mode=${latestRun.mode}`,

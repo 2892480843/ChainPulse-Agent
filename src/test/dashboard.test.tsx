@@ -78,6 +78,10 @@ describe("ChainPulse dashboard", () => {
     expect(screen.getByRole("heading", { name: "路演导演台" })).toBeInTheDocument();
     expect(screen.getByText("Proof Chain 摘要")).toBeInTheDocument();
     expect(screen.getByText("评委观察清单")).toBeInTheDocument();
+    expect(screen.getByText("100-point judge checklist")).toBeInTheDocument();
+    expect(screen.getByText("Agent workflow")).toBeInTheDocument();
+    expect(screen.getByText("xAPI integration")).toBeInTheDocument();
+    expect(screen.getByText("Local hash verification")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Open workspace/ })).toHaveAttribute("href", "/workspace");
     expect(screen.getByRole("link", { name: /Open tasks/ })).toHaveAttribute("href", "/tasks");
     expect(screen.getByRole("link", { name: /Open xAPI trace/ })).toHaveAttribute("href", "/trace?task=task_eth_risk_001");
@@ -88,18 +92,23 @@ describe("ChainPulse dashboard", () => {
 
   it("stores the workspace run context and navigates to running tasks", async () => {
     const user = userEvent.setup();
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("offline in test"));
     render(<DashboardApp />);
 
     expect(screen.getByText("任务配置面板")).toBeInTheDocument();
     expect(screen.getByText("$ETH 推荐演示路径")).toBeInTheDocument();
+    expect(screen.getByText("Run Agent 会执行 health -> search -> schema -> call")).toBeInTheDocument();
     await user.clear(screen.getByLabelText("分析对象"));
     await user.type(screen.getByLabelText("分析对象"), "$ZEC");
     await user.selectOptions(screen.getByLabelText("Evidence window"), "7d");
     await user.click(screen.getByRole("button", { name: "Run Agent" }));
 
-    expect(routerPush).toHaveBeenCalledWith("/tasks");
+    expect(await screen.findByText("mock fallback")).toBeInTheDocument();
+    expect(routerPush).toHaveBeenCalledWith(expect.stringMatching(/^\/tasks\?task=cp-run-/));
     expect(window.sessionStorage.getItem("chainpulse:last-run")).toContain("$ZEC");
     expect(window.sessionStorage.getItem("chainpulse:last-run")).toContain("7d");
+    expect(window.sessionStorage.getItem("chainpulse:last-run")).toContain("mock fallback");
+    expect(window.sessionStorage.getItem("chainpulse:last-run-traces")).toContain("schema-first");
   });
 
   it("shows global search results and opens a report result", async () => {
@@ -243,6 +252,11 @@ describe("ChainPulse dashboard", () => {
     expect(screen.getByText("凭证摘要")).toBeInTheDocument();
     expect(screen.getByText("Why on-chain?")).toBeInTheDocument();
     expect(screen.getByText("Verify locally")).toBeInTheDocument();
+    expect(screen.getByText("Judge proof panel")).toBeInTheDocument();
+    expect(await screen.findByText("Report Hash match")).toBeInTheDocument();
+    expect(screen.getByText("Evidence Hash match")).toBeInTheDocument();
+    expect(screen.getByText("Contract configured")).toBeInTheDocument();
+    expect(screen.getByText("Wallet mode")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "今天" }));
     expect(screen.getByText("Showing 2 of 4 proof records")).toBeInTheDocument();
     expect(screen.getAllByText("ETH Risk Baseline").length).toBeGreaterThan(0);
@@ -280,9 +294,12 @@ describe("ChainPulse dashboard", () => {
     expect(screen.getByText("Risk Score")).toBeInTheDocument();
     expect(screen.getByText("可审计报告摘要")).toBeInTheDocument();
     expect(screen.getByText("Sticky audit summary")).toBeInTheDocument();
+    expect(screen.getByText("Verify evidence chain")).toBeInTheDocument();
     expect(screen.getByText("Verdict rationale")).toBeInTheDocument();
     expect(screen.getByText("Recent ETH discussion cluster")).toBeInTheDocument();
     expect(screen.getByText("Evidence -> Conclusion")).toBeInTheDocument();
+    expect(screen.getByText("Source action")).toBeInTheDocument();
+    expect(screen.getByText("Contribution")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /View related Trace for Recent ETH discussion cluster/ })).toHaveAttribute("href", "/trace?trace=trace_001");
     expect(screen.getByText("User Query")).toBeInTheDocument();
     expect(screen.getByText("xAPI Actions")).toBeInTheDocument();
@@ -305,6 +322,7 @@ describe("ChainPulse dashboard", () => {
     render(<DashboardApp />);
 
     expect(within(screen.getByTestId("trace-detail")).getByText("twitter.search_timeline")).toBeInTheDocument();
+    expect(screen.getByText("schema-first call")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /twitter.tweet_detail/ }));
     expect(within(screen.getByTestId("trace-detail")).getByText("twitter.tweet_detail")).toBeInTheDocument();
     expect(screen.getByText("schema fetch timeout")).toBeInTheDocument();

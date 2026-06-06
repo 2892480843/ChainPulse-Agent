@@ -87,4 +87,38 @@ describe("xAPI route handlers", () => {
     expect(result.error?.message).toContain("[redacted]");
     expect(result.trace.status).toBe("fallback");
   });
+
+  it("discovers the action schema before calling the action", async () => {
+    const calls: string[][] = [];
+    const service = createXApiService({
+      env: {
+        XAPI_KEY: "sk-live-for-order-test",
+        XAPI_ACTION_HOST: "action.xapi.to"
+      },
+      runner: async (args) => {
+        calls.push(args);
+        if (args[0] === "get") {
+          return {
+            action: "crypto.token.price",
+            schema: {
+              input: {
+                symbol: "string"
+              }
+            }
+          };
+        }
+        return {
+          symbol: "ETH",
+          volatility24h: 2.8
+        };
+      }
+    });
+
+    const result = await service.callAction("crypto.token.price", { symbol: "ETH" }, "task_order_test");
+
+    expect(result.mode).toBe("live");
+    expect(calls.map((args) => args[0])).toEqual(["get", "call"]);
+    expect(calls[0]).toEqual(["get", "crypto.token.price", "--format", "json"]);
+    expect(calls[1][0]).toBe("call");
+  });
 });

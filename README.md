@@ -2,7 +2,7 @@
 
 ChainPulse Agent 是一个 Web3 智能分析控制台 Demo，用于路演展示 Agent 如何从 xAPI 发现 action、读取 schema、采集证据、生成报告，并把报告哈希与证据哈希送入链上证明流程。
 
-当前版本已接入服务端 xAPI 代理：未配置 `XAPI_KEY` 或上游失败时自动回退到本地 mock 数据；链上证明仍使用本地 mock，不连接真实钱包或真实合约。
+当前版本已接入服务端 xAPI 代理和双模式证明 adapter：未配置 `XAPI_KEY` 或上游失败时自动回退到本地 mock 数据；未配置合约地址时明确显示 `not configured` / `mock fallback`，配置真实链上环境和浏览器钱包后可走 `viem` 编码的真实交易入口。
 
 ## 技术栈
 
@@ -12,6 +12,7 @@ ChainPulse Agent 是一个 Web3 智能分析控制台 Demo，用于路演展示 
 - Tailwind CSS 4
 - Vitest + Testing Library
 - lucide-react 图标
+- viem 合约 calldata 编码
 
 ## 本地启动
 
@@ -24,6 +25,12 @@ npm run dev
 
 ```txt
 http://localhost:3000
+```
+
+推荐路演入口：
+
+```txt
+http://localhost:3000/demo
 ```
 
 ## 可用脚本
@@ -93,12 +100,13 @@ Header 全局搜索支持报告、任务、xAPI Trace 和 Watchlist 目标，最
 
 ## Adapter 占位层
 
-`src/lib/adapters/xapi-client.ts` 定义浏览器端 adapter 和本地 fallback：
+`src/lib/adapters/xapi-client.ts` 定义浏览器端 adapter、Workspace run orchestration 和本地 fallback：
 
 - `routeXApiClient.healthCheck()`：请求 `/api/xapi/health`，只读取服务端状态，不接触密钥。
 - `routeXApiClient.searchActions(query)`：请求 `/api/xapi/search?query=...`。
 - `routeXApiClient.getActionSchema(action)`：请求 `/api/xapi/schema?action=...`。
 - `routeXApiClient.callAction(action, input, taskId)`：请求 `/api/xapi/call`。
+- `runWorkspaceAgent(context)`：按 `health -> search -> schema -> call` 执行一次可观察 run，并把 runtime traces 保存到 `sessionStorage`。
 - `mockXApiClient.getTrace(taskId)`：用于路演稳定 fallback trace。
 
 服务端实现位于 `src/lib/server/xapi-service.ts`，通过 Next.js route handler 读取 `XAPI_KEY` 并调用 `xapi-to` CLI。调用 action 前会先执行 schema discovery，即先 `get <actionId>`，再 `call <actionId>`。所有响应都会返回统一 JSON、运行模式和 runtime trace。
@@ -112,14 +120,22 @@ GET  /api/xapi/schema?action=...
 POST /api/xapi/call
 ```
 
-`src/lib/adapters/attestation-client.ts` 定义 `AttestationClient` 接口和 `mockAttestationClient`：
+`src/lib/adapters/attestation-client.ts` 定义 `AttestationClient` 接口、`mockAttestationClient` 和 `chainAttestationClient`：
 
-- `createReportHash(report)`
-- `createEvidenceHash(evidence)`
-- `attestReport(reportId, walletAddress)`
-- `getAttestation(reportId)`
+- `createReportHash(report)`：对报告 JSON 做 deterministic SHA-256，本地可复算。
+- `createEvidenceHash(evidence)`：对 evidence packet 做 deterministic SHA-256，本地可复算。
+- `verifyProofBundle(report, evidence, record)`：复算并比较 `reportHash` / `evidenceHash`。
+- `readAttestationConfig()`：读取 `NEXT_PUBLIC_CHAIN_ID`、`NEXT_PUBLIC_CONTRACT_ADDRESS`、`NEXT_PUBLIC_EXPLORER_BASE_URL`。
+- `mockAttestationClient`：无合约配置时用于稳定演示，UI 明确标注 `mock fallback`。
+- `chainAttestationClient`：有合约地址时使用 `viem` 编码 `attestReport(string,bytes32,bytes32)` calldata，并通过浏览器钱包发起 `eth_sendTransaction`。
 
-未来接真实链上证明时，在这里替换为 wagmi / viem 钱包连接、签名和合约写入逻辑。
+没有 `NEXT_PUBLIC_CONTRACT_ADDRESS` 时不会伪造 live 上链；按钮会 disabled 并说明缺少的配置。当前默认 ABI 为：
+
+```solidity
+function attestReport(string reportId, bytes32 reportHash, bytes32 evidenceHash)
+```
+
+若真实合约 ABI 不同，只需调整 `src/lib/adapters/attestation-client.ts` 内的 `attestationAbi`，页面和 proof bundle 结构不变。
 
 ## 环境变量
 
@@ -134,6 +150,43 @@ NEXT_PUBLIC_EXPLORER_BASE_URL=https://sepolia.etherscan.io
 ```
 
 `XAPI_KEY` 只允许在服务端读取；不要创建 `NEXT_PUBLIC_XAPI_KEY`。未配置密钥时，页面会标注 `mock fallback` / `no XAPI_KEY` 并继续展示本地 trace。上游失败时，页面展示 fallback 状态和脱敏错误摘要。
+
+### 配置 xAPI
+
+1. 复制 `.env.example` 为 `.env.local`。
+2. 填入服务端密钥：
+
+```env
+XAPI_KEY=sk-...
+XAPI_ACTION_HOST=action.xapi.to
+```
+
+3. 启动 `npm run dev` 后，在 `/workspace` 点击 `Run Agent`。
+4. `/trace` 会显示 `live xAPI`、`no XAPI_KEY` 或 `upstream failed`。密钥只在服务端 route handler 使用，不会进入浏览器 bundle。
+
+### 配置链上证明
+
+1. 部署或准备兼容 ABI 的 attestation 合约。
+2. 在 `.env.local` 配置：
+
+```env
+NEXT_PUBLIC_CHAIN_ID=11155111
+NEXT_PUBLIC_CONTRACT_ADDRESS=0x...
+NEXT_PUBLIC_EXPLORER_BASE_URL=https://sepolia.etherscan.io
+```
+
+3. 使用带钱包的浏览器打开 `/attestation`。
+4. 当合约、Explorer 和钱包都可用时，`Write real attestation` 会启用；否则页面会显示缺少 `NEXT_PUBLIC_CONTRACT_ADDRESS`、`NEXT_PUBLIC_EXPLORER_BASE_URL` 或 browser wallet。
+
+### 真实功能与 fallback 边界
+
+| 能力 | 真实路径 | fallback 边界 |
+|---|---|---|
+| xAPI health/search/schema/call | `/api/xapi/*` 服务端 route 读取 `XAPI_KEY` 并调用 `xapi-to` | 未配置密钥或上游失败时返回 mock data，并标注 `unconfigured` / `fallback` |
+| Workspace Run Agent | 浏览器调用 route client，按 `health -> search -> schema -> call` 保存 runtime traces | route 不可用时保存本地 fallback traces，不崩溃 |
+| Report/Evidence hash | 浏览器本地 deterministic SHA-256 复算 | hash mismatch 会显示 mismatch，不自动修正 |
+| Attestation | `chainAttestationClient` 用 `viem` 编码 calldata，浏览器钱包发交易 | 无合约/Explorer/钱包时按钮 disabled，展示 mock fallback receipt |
+| Explorer | 使用 `NEXT_PUBLIC_EXPLORER_BASE_URL` 拼接 tx/address 链接 | 未配置时不伪造 Sepolia 链接 |
 
 ## Product Design audit
 
@@ -164,16 +217,33 @@ User Query -> xAPI Actions -> Evidence Packet -> Report JSON -> Report Hash / Ev
 5. `/reports/rep_eth_001`
 6. `/attestation`
 
-## 3 分钟路演脚本
+## 3 分钟满分路演脚本
 
 | 时间 | 页面 | 讲解重点 |
 |---|---|---|
-| 0:00-0:20 | `/demo` | 从 Demo Mode 说明完整路径：输入目标、Agent 运行、xAPI Trace、报告、链上证明。 |
-| 0:20-0:50 | `/workspace` | 输入 `ETH` 或点击 `Demo recommended` 快速案例，说明 Agent 会把分析对象、模式和证据窗口转成任务上下文。 |
-| 0:50-1:20 | `/tasks` | 展示运行进度、阶段时间线、每阶段为什么重要，以及 Next step 面板。 |
-| 1:20-1:55 | `/trace?task=task_eth_risk_001` | 展示 xAPI action、schema、输入输出 Hash；说明 schema-first tool calling 与可追溯调用。 |
-| 1:55-2:35 | `/reports/rep_eth_001` | 展示 Verdict rationale、证据权重、View related Trace、行动建议分类和 Proof Chain。 |
-| 2:35-3:00 | `/attestation` | 展示 reportHash、evidenceHash、txHash、Why on-chain 和 Verify locally proof bundle。 |
+| 0:00-0:20 | `/demo` | 先看 `100-point judge checklist`：Agent workflow、xAPI integration、Evidence traceability、Local hash verification、On-chain readiness、Test/build readiness。 |
+| 0:20-0:50 | `/workspace` | 输入 `ETH` 或点击推荐案例，说明 `Run Agent` 会执行 `health -> search -> schema -> call`，不是只写 sessionStorage。 |
+| 0:50-1:20 | `/tasks` | 展示运行进度、runtime logs、下一步入口，说明每个阶段为何可审计。 |
+| 1:20-1:55 | `/trace?task=task_eth_risk_001` | 展示 schema-first call、input/output Hash、fallback/live 状态，说明 xAPI 证据可回放。 |
+| 1:55-2:35 | `/reports/rep_eth_001` | 展示 Verify evidence chain、证据来源 action、证据权重、贡献解释和 Trace 链接。 |
+| 2:35-3:00 | `/attestation` | 展示 Report Hash match、Evidence Hash match、Contract configured、Wallet mode 和 Judge proof panel。强调无配置时不伪造上链。 |
+
+## 评委检查清单
+
+| 维度 | 评委应看到 |
+|---|---|
+| 产品叙事 | `/demo` 可在 3 分钟内串起输入、Agent、Trace、Report、Proof。 |
+| 工程质量 | xAPI route 不泄露密钥，schema-first call 有测试覆盖，fallback 不崩。 |
+| 功能完整度 | Workspace run 可观察，Trace 可复核，Report 可解释，Attestation 可本地验证。 |
+| 创新与记忆点 | Proof bundle 能本地复算，证据卡能回链到 xAPI action。 |
+| 真实落地可信度 | 无合约时明确 `not configured`；有合约和钱包时有真实交易入口。 |
+
+更多细节：
+
+```txt
+docs/judge-scorecard.md
+docs/proof-verification.md
+```
 
 ## 后续真实服务替换位置
 

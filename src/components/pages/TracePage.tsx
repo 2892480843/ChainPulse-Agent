@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import clsx from "clsx";
 import { AlertTriangle, CheckCircle2, Clock, Code2, Download, Network, Timer } from "lucide-react";
-import { getXApiRuntimeSnapshot, mockXApiClient, type XApiRuntimeSnapshot } from "@/lib/adapters/xapi-client";
+import { getXApiRuntimeSnapshot, mockXApiClient, readWorkspaceRunTraces, type XApiRuntimeSnapshot } from "@/lib/adapters/xapi-client";
 import { xapiTraces } from "@/lib/mock-data";
 import type { XApiTrace } from "@/lib/types";
 import { useAppActions } from "@/components/shell/AppShell";
@@ -39,6 +39,13 @@ function TraceContent({ queryString }: { queryString: string }) {
     getXApiRuntimeSnapshot().then((result) => {
       if (!cancelled) setRuntimeSnapshot(result);
     });
+    const storedTraces = readWorkspaceRunTraces(taskId);
+    if (storedTraces.length > 0) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
     mockXApiClient
       .getTrace(taskId ?? "__all__")
       .then((result) => {
@@ -117,6 +124,7 @@ function TraceContent({ queryString }: { queryString: string }) {
                   <p className="mt-2 text-xs tabular-nums text-slate-500">
                     {trace.startedAt} / {trace.latencyMs}ms / schema {trace.schemaFetched ? "yes" : "no"}
                   </p>
+                  {trace.schemaFetched ? <span className="mt-2 inline-flex rounded-full bg-blue-50 px-2 py-1 text-[11px] font-semibold text-blue-700 ring-1 ring-blue-100">schema-first</span> : null}
                   <p className="mt-2 text-sm text-slate-700">{trace.outputPreview}</p>
                 </button>
               );
@@ -150,6 +158,14 @@ function TraceContent({ queryString }: { queryString: string }) {
               </p>
             </div>
           ) : null}
+
+          <div className="mt-4 rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm text-blue-900">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-blue-700 ring-1 ring-blue-100">schema-first call</span>
+              <span className="font-semibold">{selectedTrace.schemaFetched ? "Schema discovery was completed before this call." : "Schema discovery missing or failed."}</span>
+            </div>
+            <p className="mt-2 text-xs leading-5 text-blue-800">评委可复核 action contract、input hash 和 output hash，确认外部证据不是页面截图。</p>
+          </div>
 
           <div className="mt-4 grid gap-4 lg:grid-cols-2">
             <CodeBlock title="Input JSON" value={selectedTrace.input} />
@@ -223,6 +239,14 @@ function getTraceTone(status: XApiTrace["status"]) {
       icon: Timer
     };
   }
+  if (status === "fallback") {
+    return {
+      border: "border-amber-400",
+      selected: "border-amber-500 bg-amber-50 shadow-[inset_0_0_0_1px_rgba(245,158,11,0.16)]",
+      iconBg: "bg-amber-50 text-amber-700 ring-1 ring-amber-100",
+      icon: AlertTriangle
+    };
+  }
   return {
     border: "border-emerald-400",
     selected: "border-emerald-500 bg-emerald-50 shadow-[inset_0_0_0_1px_rgba(16,185,129,0.14)]",
@@ -279,6 +303,8 @@ function readTraceQuery(queryString: string) {
 }
 
 function getInitialTraces(taskId: string | null): XApiTrace[] {
+  const storedTraces = readWorkspaceRunTraces(taskId);
+  if (storedTraces.length > 0) return storedTraces;
   if (!taskId) return xapiTraces;
   const filtered = xapiTraces.filter((trace) => trace.taskId === taskId);
   return filtered.length > 0 ? filtered : xapiTraces;

@@ -1,8 +1,10 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import clsx from "clsx";
 import { ArrowLeft, CheckCircle2, Download, ExternalLink, ShieldAlert, ShieldCheck, Vote } from "lucide-react";
+import { readAttestationConfig, verifyProofBundle, type ProofVerificationResult } from "@/lib/adapters/attestation-client";
 import { attestation, reports, xapiTraces } from "@/lib/mock-data";
 import { useAppActions } from "@/components/shell/AppShell";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -16,11 +18,27 @@ import { TokenIcon } from "@/components/ui/TokenIcon";
 import { VerdictBadge } from "@/components/ui/VerdictBadge";
 import { buttonClass, cardClass, primaryButtonClass } from "@/components/ui/styles";
 
-const explorerBaseUrl = process.env.NEXT_PUBLIC_EXPLORER_BASE_URL || "https://sepolia.etherscan.io";
-
 export function ReportDetailPage({ reportId }: { reportId: string }) {
   const { copiedKey, copyText, downloadJson, notify } = useAppActions();
   const report = reports.find((item) => item.id === reportId);
+  const [verification, setVerification] = useState<ProofVerificationResult | null>(null);
+  const attestationConfig = readAttestationConfig();
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!report) return;
+
+    verifyProofBundle(report, report.evidence, {
+      reportHash: report.reportHash,
+      evidenceHash: report.evidenceHash
+    }).then((result) => {
+      if (!cancelled) setVerification(result);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [report]);
 
   if (!report) {
     return (
@@ -40,6 +58,7 @@ export function ReportDetailPage({ reportId }: { reportId: string }) {
   const isAttested = report.status === "已上链";
   const relatedTraces = report.evidence.map((item) => findRelatedTrace(item.source));
   const linkedEvidenceCount = relatedTraces.filter(Boolean).length;
+  const traceHashesPresent = relatedTraces.filter(Boolean).every((trace) => Boolean(trace?.inputHash && trace?.outputHash));
   const verdictRationale = buildVerdictRationale(report);
   const categorizedActions = categorizeActions(report.actions);
 
@@ -108,11 +127,31 @@ export function ReportDetailPage({ reportId }: { reportId: string }) {
           />
 
           <div className={clsx(cardClass, "p-4 sm:p-5")}>
+            <h2 className="text-sm font-semibold text-slate-950">Verify evidence chain</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600">把报告、证据和 xAPI Trace 三段串起来复核：证据能回到 Trace，Trace 保留 input/output hash，报告与证据哈希可本地复算。</p>
+            <div className="mt-3 grid gap-3 md:grid-cols-3">
+              <VerifyStatus label="Evidence links to Trace" value={`${linkedEvidenceCount}/${report.evidence.length}`} passed={linkedEvidenceCount === report.evidence.length} />
+              <VerifyStatus label="Input/output hash present" value={traceHashesPresent ? "present" : "missing"} passed={traceHashesPresent} />
+              <VerifyStatus
+                label="Report/evidence hash recomputable"
+                value={verification ? (verification.reportHashMatch && verification.evidenceHashMatch ? "match" : "mismatch") : "checking"}
+                passed={Boolean(verification?.reportHashMatch && verification.evidenceHashMatch)}
+              />
+            </div>
+          </div>
+
+          <div className={clsx(cardClass, "p-4 sm:p-5")}>
             <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
               <h2 className="text-sm font-semibold text-slate-950">{"Evidence -> Conclusion"}</h2>
               <span className="w-fit rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-100">
                 {linkedEvidenceCount}/{report.evidence.length} Trace linked
               </span>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-semibold uppercase text-slate-500">
+              <span>Source action</span>
+              <span>Evidence weight</span>
+              <span>Contribution</span>
+              <span>Trace link</span>
             </div>
             <div className="mt-3 grid gap-3">
               {report.evidence.map((item, index) => {
@@ -126,6 +165,11 @@ export function ReportDetailPage({ reportId }: { reportId: string }) {
                           <span className="mono rounded-full bg-white px-2 py-1 text-xs text-slate-500 ring-1 ring-slate-200">{item.source.replace("xapi:", "")}</span>
                         </div>
                         <p className="mt-2 text-sm leading-6 text-slate-600">{item.summary}</p>
+                        <div className="mt-3 grid gap-2 text-xs text-slate-600 md:grid-cols-3">
+                          <EvidenceMeta label="source" value={item.source.replace("xapi:", "")} />
+                          <EvidenceMeta label="weight" value={`${Math.round(item.weight * 100)}%`} />
+                          <EvidenceMeta label="contribution" value={buildEvidenceContribution(report, item)} />
+                        </div>
                       </div>
                       <div className="rounded-lg border border-slate-200 bg-white p-3">
                         <p className="text-xs font-semibold uppercase text-slate-500">Conclusion weight</p>
@@ -184,7 +228,7 @@ export function ReportDetailPage({ reportId }: { reportId: string }) {
             <div className="mt-3 space-y-3">
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                 <p className="text-xs font-medium text-slate-500">链上状态</p>
-                <p className="mt-2 text-sm font-semibold text-slate-950">{isAttested ? "Confirmed on Sepolia mock" : "Draft, ready for mock attestation"}</p>
+                <p className="mt-2 text-sm font-semibold text-slate-950">{isAttested ? (attestationConfig.contractConfigured ? "Confirmed on configured chain" : "Mock fallback receipt, contract not configured") : "Draft, ready for attestation"}</p>
               </div>
               <HashRow label="Report Hash" value={report.reportHash} onCopy={copyText} copiedKey={copiedKey} />
               <HashRow label="Evidence Hash" value={report.evidenceHash} onCopy={copyText} copiedKey={copiedKey} />
@@ -195,14 +239,19 @@ export function ReportDetailPage({ reportId }: { reportId: string }) {
                   {linkedEvidenceCount}/{report.evidence.length} evidence cards linked to Trace
                 </p>
               </div>
-              {isAttested ? (
-                <a className={buttonClass} href={`${explorerBaseUrl.replace(/\/$/, "")}/tx/${attestation.txHash}`} target="_blank" rel="noreferrer">
+              {isAttested && attestationConfig.explorerBaseUrl ? (
+                <a className={buttonClass} href={`${attestationConfig.explorerBaseUrl}/tx/${attestation.txHash}`} target="_blank" rel="noreferrer">
                   <ExternalLink aria-hidden className="h-4 w-4" />
-                  Open Sepolia Tx
+                  Open Explorer Tx
                 </a>
+              ) : isAttested ? (
+                <button className={buttonClass} type="button" disabled title="NEXT_PUBLIC_EXPLORER_BASE_URL is not configured">
+                  <ExternalLink aria-hidden className="h-4 w-4" />
+                  Explorer not configured
+                </button>
               ) : (
-                <button className={primaryButtonClass} type="button" onClick={() => notify("Attest on-chain mock 已排队")}>
-                  Attest on-chain
+                <button className={primaryButtonClass} type="button" onClick={() => notify("Attestation draft 已排队，真实写链请先配置合约和钱包")}>
+                  Prepare attestation
                 </button>
               )}
               <button className={buttonClass} type="button" onClick={() => downloadJson(`${report.topic.toLowerCase()}-report-detail.json`, report)}>
@@ -214,6 +263,24 @@ export function ReportDetailPage({ reportId }: { reportId: string }) {
         </aside>
       </div>
     </section>
+  );
+}
+
+function VerifyStatus({ label, value, passed }: { label: string; value: string; passed: boolean }) {
+  return (
+    <div className={clsx("rounded-lg border p-3", passed ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50")}>
+      <p className={clsx("text-xs font-semibold uppercase", passed ? "text-emerald-700" : "text-amber-700")}>{label}</p>
+      <p className="mt-2 text-sm font-semibold text-slate-950">{value}</p>
+    </div>
+  );
+}
+
+function EvidenceMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white px-2.5 py-2">
+      <p className="text-[11px] font-semibold uppercase text-slate-500">{label}</p>
+      <p className="mt-1 text-slate-800">{value}</p>
+    </div>
   );
 }
 
@@ -246,6 +313,12 @@ function categorizeActions(actions: string[]) {
     { label: "Risk Control", icon: ShieldAlert, items: [second ?? "Pause automated execution if risk score crosses the configured threshold."] },
     { label: "DAO Governance", icon: Vote, items: rest.length > 0 ? rest : ["Attach the evidence packet before any governance review."] }
   ];
+}
+
+function buildEvidenceContribution(report: (typeof reports)[number], item: (typeof reports)[number]["evidence"][number]) {
+  if (report.verdict === "CAUTION" || report.verdict === "NEGATIVE") return `raises ${report.verdict.toLowerCase()} confidence`;
+  if (report.verdict === "POSITIVE") return "supports alpha momentum";
+  return "keeps observe verdict grounded";
 }
 
 function AuditMetric({ label, value, detail, meter }: { label: string; value: string; detail: string; meter?: number }) {
