@@ -64,7 +64,15 @@ export function AttestationPage() {
   const [preparedAttestation, setPreparedAttestation] = useState<PreparedChainAttestation | null>(null);
   const readiness = useMemo(() => getAttestationReadiness(config), [config]);
   const filteredProofReports = useMemo(() => filterProofHistory(reports, historyFilters), [historyFilters]);
-  const steps = ["生成报告", "生成哈希", "SignalAttestation ABI", readiness.canWrite ? "钱包可签名" : "等待钱包/合约", readiness.canWrite ? "可提交交易" : "真实交易禁用", record.txHash.startsWith("0x") ? "凭证可复核" : "等待确认"];
+  const chainVerified = record.onChainVerification?.status === "confirmed";
+  const steps = [
+    "生成报告",
+    "生成哈希",
+    "SignalAttestation ABI",
+    readiness.canWrite ? "钱包可签名" : "等待钱包/合约",
+    readiness.canWrite ? "可提交交易" : "真实交易禁用",
+    chainVerified ? "链上回读已验证" : record.txHash.startsWith("0x") ? "等待链上回读" : "等待确认"
+  ];
 
   useEffect(() => {
     let cancelled = false;
@@ -124,7 +132,7 @@ export function AttestationPage() {
       }
       const nextRecord = await chainAttestationClient.attestReport(reports[0].id, walletAddress);
       setRecord(nextRecord);
-      notify("真实链上交易已提交");
+      notify(nextRecord.onChainVerification?.status === "confirmed" ? "链上写入与回读验证通过" : "真实链上交易已提交，回读验证未完全匹配");
     } catch (error) {
       notify(error instanceof Error ? error.message : "真实链上交易提交失败");
     }
@@ -214,6 +222,12 @@ export function AttestationPage() {
             <LocalVerifyFact label="Calldata" passed={Boolean(preparedAttestation)} value={preparedAttestation ? shortValue(preparedAttestation.data) : "waiting"} />
           </div>
 
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            <LocalVerifyFact label="Receipt + event" passed={Boolean(record.onChainVerification?.eventMatched)} value={record.onChainVerification ? (record.onChainVerification.eventMatched ? "matched" : "mismatch") : "waiting"} />
+            <LocalVerifyFact label="Storage readback" passed={chainVerified} value={record.onChainVerification?.status ?? "waiting"} />
+            <LocalVerifyFact label="On-chain reportId" passed={Boolean(record.reportId)} value={record.reportId ?? "waiting"} />
+          </div>
+
           {!readiness.canWrite ? (
             <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-800">
               <div className="flex items-center gap-2 font-semibold">
@@ -277,6 +291,7 @@ export function AttestationPage() {
                   reportHash: record.reportHash,
                   evidenceHash: record.evidenceHash,
                   txHash: record.txHash,
+                  onChainVerification: record.onChainVerification ?? null,
                   localVerification,
                   preparedAttestation: preparedAttestation
                     ? {
