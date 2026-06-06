@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import clsx from "clsx";
 import { Database, FileText, Network, Plus, Radio, RefreshCcw, ShieldCheck, Timer, X } from "lucide-react";
+import { fetchStoredTaskRun, fetchStoredTasks, mergeTasksWithMock } from "@/lib/adapters/agent-data-client";
 import { workspaceRunStorageKeys } from "@/lib/adapters/xapi-client";
 import { reports, runningTasks } from "@/lib/mock-data";
 import { timelineSteps } from "@/lib/navigation";
@@ -32,11 +33,46 @@ export function RunningTasksPage() {
   const { notify } = useAppActions();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const taskIdParam = searchParams.get("task");
   const [latestRun] = useState<WorkspaceRunContext | null>(() => readStoredRun());
-  const [currentTask, setCurrentTask] = useState<RunningTask>(() => createInitialTask(latestRun, searchParams.get("task")));
+  const [currentTask, setCurrentTask] = useState<RunningTask>(() => createInitialTask(latestRun, taskIdParam));
+  const [taskList, setTaskList] = useState<RunningTask[]>(runningTasks);
   const [logs, setLogs] = useState<string[]>(() => createInitialLogs(latestRun));
   const [autoScroll, setAutoScroll] = useState(true);
   const logRegionRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetchStoredTasks()
+      .then((items) => {
+        if (cancelled) return;
+        const mergedTasks = mergeTasksWithMock(items);
+        setTaskList(mergedTasks);
+        if (!taskIdParam && !latestRun && mergedTasks[0]) {
+          setCurrentTask(mergedTasks[0]);
+          setLogs(mergedTasks[0].logs);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setTaskList(mergeTasksWithMock([]));
+      });
+
+    if (taskIdParam) {
+      fetchStoredTaskRun(taskIdParam)
+        .then((run) => {
+          if (!cancelled && run) {
+            setCurrentTask(run.task);
+            setLogs(run.task.logs);
+          }
+        })
+        .catch(() => undefined);
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [latestRun, taskIdParam]);
 
   useEffect(() => {
     if (!autoScroll || !logRegionRef.current) return;
@@ -72,6 +108,10 @@ export function RunningTasksPage() {
   }
 
   function openReportDraft() {
+    if (currentTask.reportId) {
+      router.push(`/reports/${currentTask.reportId}`);
+      return;
+    }
     const matchedReport = reports.find((report) => report.topic.toLowerCase() === currentTask.topic.replace("$", "").toLowerCase());
     if (matchedReport) {
       router.push(`/reports/${matchedReport.id}`);
@@ -208,7 +248,7 @@ export function RunningTasksPage() {
           <div className={clsx(cardClass, "overflow-hidden")}>
             <SectionHeader title="其他任务" action="3 tasks" />
             <div className="divide-y divide-slate-100">
-              {runningTasks.slice(1).map((task) => (
+              {taskList.filter((task) => task.id !== currentTask.id).slice(0, 3).map((task) => (
                 <div key={task.id} className="p-4">
                   <div className="flex items-center justify-between">
                     <p className="font-medium text-slate-900">{task.topic}</p>

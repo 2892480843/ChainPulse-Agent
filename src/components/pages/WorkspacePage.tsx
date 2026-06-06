@@ -1,14 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import clsx from "clsx";
-import { ArrowRight, FileCheck2, Gauge, Loader2, Network, Play, ShieldCheck, SlidersHorizontal } from "lucide-react";
+import { ArrowRight, Brain, FileCheck2, Gauge, Loader2, Network, Play, ShieldCheck, SlidersHorizontal } from "lucide-react";
+import { fetchAiHealth } from "@/lib/adapters/ai-client";
+import { fetchStoredReports, mergeReportsWithMock } from "@/lib/adapters/agent-data-client";
 import { persistWorkspaceRun, runWorkspaceAgent, type WorkspaceAgentRunResult } from "@/lib/adapters/xapi-client";
 import { reports } from "@/lib/mock-data";
 import { defaultWorkspaceAdvancedFilters, modeOptions } from "@/lib/navigation";
 import type { ScanMode, WorkspaceAdvancedFilters, WorkspaceRunContext } from "@/lib/types";
+import type { AiHealthStatus } from "@/lib/ai-types";
 import { useAppActions } from "@/components/shell/AppShell";
 import { ModeBadge } from "@/components/ui/ModeBadge";
 import { PageHeading } from "@/components/ui/PageHeading";
@@ -33,6 +36,34 @@ export function WorkspacePage() {
   const [isRunning, setIsRunning] = useState(false);
   const [lastRun, setLastRun] = useState<WorkspaceAgentRunResult | null>(null);
   const [advancedFilters, setAdvancedFilters] = useState<WorkspaceAdvancedFilters>(defaultWorkspaceAdvancedFilters);
+  const [recentReports, setRecentReports] = useState(reports);
+  const [aiHealth, setAiHealth] = useState<AiHealthStatus | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchStoredReports()
+      .then((items) => {
+        if (!cancelled) setRecentReports(mergeReportsWithMock(items));
+      })
+      .catch(() => {
+        if (!cancelled) setRecentReports(mergeReportsWithMock([]));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchAiHealth()
+      .then((health) => {
+        if (!cancelled) setAiHealth(health);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function updateAdvancedFilter<Key extends keyof WorkspaceAdvancedFilters>(key: Key, value: WorkspaceAdvancedFilters[Key]) {
     setAdvancedFilters((current) => ({ ...current, [key]: value }));
@@ -89,6 +120,9 @@ function fillQuickCase(value: string) {
             </div>
             <span className={clsx("w-fit rounded-full px-2.5 py-1 text-xs font-semibold ring-1", lastRun?.label === "live xAPI" ? "bg-emerald-50 text-emerald-700 ring-emerald-100" : "bg-amber-50 text-amber-700 ring-amber-100")}>
               {lastRun?.label ?? "mock fallback"}
+            </span>
+            <span className="w-fit rounded-full bg-violet-50 px-2.5 py-1 text-xs font-semibold text-violet-700 ring-1 ring-violet-100">
+              AI {aiHealth ? `${aiHealth.provider} / ${aiHealth.model} / ${aiHealth.mode}` : "checking"}
             </span>
           </div>
           <div className="grid gap-4">
@@ -182,9 +216,26 @@ function fillQuickCase(value: string) {
             {lastRun ? (
               <div className={clsx("grid gap-2 rounded-lg border px-3 py-3 text-xs md:grid-cols-4", lastRun.label === "live xAPI" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-800")}>
                 <RunFact label="Runtime" value={lastRun.label === "mock fallback" ? "fallback run" : lastRun.label} />
-                <RunFact label="Reason" value={lastRun.reason} />
-                <RunFact label="Action" value={lastRun.action} />
+                <RunFact label="AI" value={lastRun.ai ? `${lastRun.ai.model} / ${lastRun.ai.mode}` : "fallback"} />
+                <RunFact label="Tools" value={lastRun.ai?.toolPlan?.join(", ") ?? lastRun.action} />
                 <RunFact label="Trace" value={`${lastRun.traces.length} steps`} />
+              </div>
+            ) : null}
+            {lastRun?.ai ? (
+              <div className="rounded-lg border border-violet-200 bg-violet-50 p-3 text-sm text-violet-900">
+                <div className="flex items-center gap-2 font-semibold">
+                  <Brain aria-hidden className="h-4 w-4" />
+                  AI plan created
+                </div>
+                <p className="mt-2 text-xs leading-5">{lastRun.ai.reasoningSummary ?? lastRun.ai.plan?.reason}</p>
+                <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-semibold">
+                  {(lastRun.ai.toolPlan ?? []).map((tool) => (
+                    <span key={tool} className="rounded-full bg-white px-2 py-1 text-violet-700 ring-1 ring-violet-100">
+                      {tool}
+                    </span>
+                  ))}
+                </div>
+                <p className="mono mt-3 truncate text-[11px] text-violet-700">prompt {lastRun.ai.promptHash} / output {lastRun.ai.outputHash}</p>
               </div>
             ) : null}
             <div className="flex flex-wrap gap-2">
@@ -223,7 +274,7 @@ function fillQuickCase(value: string) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {reports.slice(0, 3).map((report) => (
+                {recentReports.slice(0, 3).map((report) => (
                   <tr key={report.id} className="hover:bg-slate-50">
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">

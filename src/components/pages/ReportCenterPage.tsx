@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import clsx from "clsx";
 import { AlertTriangle, CheckCircle2, Download, Eye, FileText, Filter, ShieldCheck, SlidersHorizontal } from "lucide-react";
+import { fetchStoredReports, mergeReportsWithMock } from "@/lib/adapters/agent-data-client";
 import { filterReports, clampRisk } from "@/lib/filters";
 import { reports } from "@/lib/mock-data";
 import type { Report, ReportFilters } from "@/lib/types";
@@ -56,8 +57,23 @@ function ReportCenterContent({ initialFilters, initialDatePreset }: { initialFil
   const router = useRouter();
   const [filters, setFilterState] = useState(initialFilters);
   const [datePreset, setDatePreset] = useState<DateRangePreset>(initialDatePreset);
+  const [reportItems, setReportItems] = useState<Report[]>(reports);
 
-  const filteredReports = useMemo(() => filterReports(reports, filters), [filters]);
+  useEffect(() => {
+    let cancelled = false;
+    fetchStoredReports()
+      .then((items) => {
+        if (!cancelled) setReportItems(mergeReportsWithMock(items));
+      })
+      .catch(() => {
+        if (!cancelled) setReportItems(mergeReportsWithMock([]));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const filteredReports = useMemo(() => filterReports(reportItems, filters), [filters, reportItems]);
   const activeFilters = useMemo(() => getActiveFilterLabels(filters), [filters]);
   const stats = useMemo(() => createReportStats(filteredReports), [filteredReports]);
 
@@ -78,7 +94,7 @@ function ReportCenterContent({ initialFilters, initialDatePreset }: { initialFil
       return;
     }
 
-    setFilters({ ...filters, ...getDateRangeForPreset(nextDatePreset) }, nextDatePreset);
+    setFilters({ ...filters, ...getDateRangeForPreset(nextDatePreset, reportItems) }, nextDatePreset);
   }
 
   function updateCustomDate(key: "startDate" | "endDate", value: string) {
@@ -112,7 +128,7 @@ function ReportCenterContent({ initialFilters, initialDatePreset }: { initialFil
 
   return (
     <section className="space-y-5">
-      <PageHeading eyebrow="Reports" title="报告中心" description="按模式、风险分、结论、日期和关键词筛选本地 mock 报告，导出结构化 JSON 用于路演演示。" />
+      <PageHeading eyebrow="Reports" title="报告中心" description="按模式、风险分、结论、日期和关键词筛选持久化 Agent 报告与明确标注的 mock fallback 报告。" />
       <div className="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_320px]">
         <div className={clsx(cardClass, "overflow-hidden")}>
           <div className="border-b border-slate-200 bg-white p-4">
@@ -231,7 +247,7 @@ function ReportCenterContent({ initialFilters, initialDatePreset }: { initialFil
 
             <div className="mt-4 grid gap-3 border-t border-slate-100 pt-4 lg:grid-cols-[1fr_auto] lg:items-center">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">Showing {filteredReports.length} of {reports.length} reports</span>
+                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">Showing {filteredReports.length} of {reportItems.length} reports</span>
                 <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 ring-1 ring-blue-100">Avg confidence {stats.averageConfidence}%</span>
                 <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-100">{stats.attestedCount} on-chain</span>
                 <span className="rounded-full bg-orange-50 px-2.5 py-1 text-xs font-semibold text-orange-700 ring-1 ring-orange-100">{stats.highRiskCount} high risk</span>
@@ -257,7 +273,7 @@ function ReportCenterContent({ initialFilters, initialDatePreset }: { initialFil
                     </span>
                   ))
                 ) : (
-                  <span className="text-xs text-slate-500">None, showing the full mock report set.</span>
+                  <span className="text-xs text-slate-500">None, showing the full persistent + mock report set.</span>
                 )}
               </div>
             </div>
@@ -299,7 +315,9 @@ function ReportCenterContent({ initialFilters, initialDatePreset }: { initialFil
                             {report.title}
                           </Link>
                           <p className="max-w-[520px] truncate text-xs text-slate-500">{report.summary}</p>
-                          <p className="mono mt-1 text-[11px] text-slate-400">{report.id}</p>
+                          <p className="mono mt-1 text-[11px] text-slate-400">
+                            {report.id} / {report.sourceMode ?? "mock"}
+                          </p>
                         </div>
                       </div>
                     </td>
@@ -344,24 +362,24 @@ function ReportCenterContent({ initialFilters, initialDatePreset }: { initialFil
         </div>
 
         <aside className="space-y-4">
-          <StatCard icon={FileText} label="报告总数" value={`${reports.length}`} detail="本地 mock 数据" tone="blue" />
-          <StatCard icon={ShieldCheck} label="Proof coverage" value={`${Math.round((reports.filter((report) => report.status === "已上链").length / reports.length) * 100)}%`} detail="已上链报告占比" tone="green" />
+          <StatCard icon={FileText} label="报告总数" value={`${reportItems.length}`} detail="persistent + mock data" tone="blue" />
+          <StatCard icon={ShieldCheck} label="Proof coverage" value={`${reportItems.length ? Math.round((reportItems.filter((report) => report.status === "已上链").length / reportItems.length) * 100) : 0}%`} detail="已上链报告占比" tone="green" />
           <div className={clsx(cardClass, "p-4")}>
             <div className="flex items-center gap-2">
               <SlidersHorizontal aria-hidden className="h-4 w-4 text-blue-700" />
               <h2 className="text-sm font-semibold text-slate-950">Review posture</h2>
             </div>
             <div className="mt-3 space-y-3 text-sm">
-              <ReviewRow label="Needs attention" value={`${reports.filter((report) => report.verdict === "CAUTION" || report.riskScore >= 60).length} reports`} tone="orange" />
-              <ReviewRow label="Ready to present" value={`${reports.filter((report) => report.status === "已上链").length} attested`} tone="green" />
-              <ReviewRow label="Evidence packets" value={`${reports.reduce((sum, report) => sum + report.evidence.length, 0)} linked`} tone="blue" />
+              <ReviewRow label="Needs attention" value={`${reportItems.filter((report) => report.verdict === "CAUTION" || report.riskScore >= 60).length} reports`} tone="orange" />
+              <ReviewRow label="Ready to present" value={`${reportItems.filter((report) => report.status === "已上链").length} attested`} tone="green" />
+              <ReviewRow label="Evidence packets" value={`${reportItems.reduce((sum, report) => sum + report.evidence.length, 0)} linked`} tone="blue" />
             </div>
           </div>
           <DistributionCard title="结论分布" rows={[["POSITIVE", 1], ["OBSERVE", 2], ["CAUTION", 1], ["NEGATIVE", 0]]} />
           <DistributionCard title="模式分布" rows={[["Risk Scan", 2], ["Alpha Scan", 1], ["DAO 尽调", 1]]} />
           <div className={clsx(cardClass, "p-4 text-sm text-slate-600")}>
             <h2 className="mb-2 font-semibold text-slate-950">数据说明</h2>
-            <p>所有报告、Hash、证据和链上字段均为 mock，用于表达 Agent workflow 与 xAPI Trace，不包含真实 API Key。</p>
+            <p>报告列表合并展示持久化 Agent run 与显式 sourceMode=mock 的演示数据；审计时请优先查看每条报告、证据和 Trace 的 sourceMode。</p>
           </div>
         </aside>
       </div>
@@ -451,10 +469,10 @@ function createReportStats(items: Report[]) {
   };
 }
 
-function getDateRangeForPreset(preset: Exclude<DateRangePreset, "custom">): Pick<ReportFilters, "startDate" | "endDate"> {
+function getDateRangeForPreset(preset: Exclude<DateRangePreset, "custom">, items: Report[] = reports): Pick<ReportFilters, "startDate" | "endDate"> {
   if (preset === "all") return { startDate: "", endDate: "" };
 
-  const anchorDate = getLatestReportDate(reports);
+  const anchorDate = getLatestReportDate(items);
   if (preset === "today") return { startDate: anchorDate, endDate: anchorDate };
 
   return {

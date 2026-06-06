@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import clsx from "clsx";
 import { AlertTriangle, CalendarClock, Check, Download, ExternalLink, FileCheck2, Filter, Landmark, PackageCheck, ShieldCheck, Wallet } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import {
-  chainAttestationClient,
+  attestReportOnChain,
+  createMockAttestationRecord,
   getAttestationReadiness,
-  mockAttestationClient,
   prepareChainAttestation,
   readBrowserAttestationConfig,
   readAttestationConfig,
@@ -16,8 +17,9 @@ import {
   type PreparedChainAttestation,
   type ProofVerificationResult
 } from "@/lib/adapters/attestation-client";
+import { fetchStoredReports, mergeReportsWithMock, saveReportAttestationRecord } from "@/lib/adapters/agent-data-client";
 import { attestation, reports } from "@/lib/mock-data";
-import type { Report } from "@/lib/types";
+import type { Report, ReportAttestation } from "@/lib/types";
 import { useAppActions } from "@/components/shell/AppShell";
 import { CopyButton } from "@/components/ui/CopyButton";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -55,7 +57,10 @@ const defaultProofHistoryFilters: ProofHistoryFilters = {
 };
 
 export function AttestationPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const { copiedKey, copyText, downloadJson, notify } = useAppActions();
+  const [reportItems, setReportItems] = useState<Report[]>(reports);
   const [record, setRecord] = useState<AttestationRecord>(attestation);
   const [localVerification, setLocalVerification] = useState<ProofVerificationResult | null>(null);
   const [historyFilters, setHistoryFilterState] = useState(defaultProofHistoryFilters);
@@ -63,7 +68,9 @@ export function AttestationPage() {
   const [config, setConfig] = useState(() => readAttestationConfig());
   const [preparedAttestation, setPreparedAttestation] = useState<PreparedChainAttestation | null>(null);
   const readiness = useMemo(() => getAttestationReadiness(config), [config]);
-  const filteredProofReports = useMemo(() => filterProofHistory(reports, historyFilters), [historyFilters]);
+  const selectedReportId = searchParams.get("report") ?? reports[0].id;
+  const selectedReport = useMemo(() => reportItems.find((report) => report.id === selectedReportId) ?? reportItems[0] ?? reports[0], [reportItems, selectedReportId]);
+  const filteredProofReports = useMemo(() => filterProofHistory(reportItems, historyFilters), [historyFilters, reportItems]);
   const chainVerified = record.onChainVerification?.status === "confirmed";
   const steps = [
     "生成报告",
@@ -76,13 +83,26 @@ export function AttestationPage() {
 
   useEffect(() => {
     let cancelled = false;
-    mockAttestationClient
-      .getAttestation(reports[0].id)
+    fetchStoredReports()
+      .then((items) => {
+        if (!cancelled) setReportItems(mergeReportsWithMock(items));
+      })
+      .catch(() => {
+        if (!cancelled) setReportItems(mergeReportsWithMock([]));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    createMockAttestationRecord(selectedReport)
       .then((result) => {
         if (!cancelled) setRecord(result);
       })
       .catch(() => notify("attestation mock adapter 读取失败"));
-    verifyProofBundle(reports[0], reports[0].evidence, attestation).then((result) => {
+    verifyProofBundle(selectedReport, selectedReport.evidence, recordFromReport(selectedReport) ?? selectedReport).then((result) => {
       if (!cancelled) setLocalVerification(result);
     });
     window.setTimeout(() => {
@@ -91,11 +111,11 @@ export function AttestationPage() {
     return () => {
       cancelled = true;
     };
-  }, [notify]);
+  }, [notify, selectedReport]);
 
   useEffect(() => {
     let cancelled = false;
-    prepareChainAttestation(reports[0], reports[0].evidence, config)
+    prepareChainAttestation(selectedReport, selectedReport.evidence, config)
       .then((result) => {
         if (!cancelled) setPreparedAttestation(result);
       })
@@ -105,7 +125,7 @@ export function AttestationPage() {
     return () => {
       cancelled = true;
     };
-  }, [config]);
+  }, [config, selectedReport]);
 
   function openExplorer() {
     if (!config.explorerBaseUrl) {
@@ -130,8 +150,12 @@ export function AttestationPage() {
         notify("钱包未返回地址");
         return;
       }
-      const nextRecord = await chainAttestationClient.attestReport(reports[0].id, walletAddress);
+      const nextRecord = await attestReportOnChain(selectedReport, walletAddress);
       setRecord(nextRecord);
+      const savedReport = await saveReportAttestationRecord(selectedReport.id, toReportAttestation(nextRecord));
+      if (savedReport) {
+        setReportItems((currentItems) => currentItems.map((report) => (report.id === savedReport.id ? savedReport : report)));
+      }
       notify(nextRecord.onChainVerification?.status === "confirmed" ? "链上写入与回读验证通过" : "真实链上交易已提交，回读验证未完全匹配");
     } catch (error) {
       notify(error instanceof Error ? error.message : "真实链上交易提交失败");
@@ -149,7 +173,7 @@ export function AttestationPage() {
       return;
     }
 
-    setHistoryFilters((currentFilters) => ({ ...currentFilters, ...getProofDateRangeForPreset(nextDatePreset) }), nextDatePreset);
+    setHistoryFilters((currentFilters) => ({ ...currentFilters, ...getProofDateRangeForPreset(nextDatePreset, reportItems) }), nextDatePreset);
   }
 
   function updateCustomDate(key: "startDate" | "endDate", value: string) {
@@ -180,9 +204,23 @@ export function AttestationPage() {
                 </span>
                 <div>
                   <h2 className="text-lg font-semibold text-slate-950">凭证摘要</h2>
-                  <p className="mt-1 text-xs text-slate-500">ETH Risk Baseline / {readiness.state === "live ready" ? "live-ready chain adapter" : "mock fallback receipt"}</p>
+                  <p className="mt-1 text-xs text-slate-500">{selectedReport.title} / {selectedReport.sourceMode ?? "mock"} / {readiness.state === "live ready" ? "live-ready chain adapter" : "mock fallback receipt"}</p>
                 </div>
               </div>
+              <label className="mt-3 grid max-w-xl gap-1 text-xs font-medium text-slate-600">
+                Report
+                <select
+                  className={inputClass}
+                  value={selectedReport.id}
+                  onChange={(event) => router.push(`/attestation?report=${encodeURIComponent(event.target.value)}`)}
+                >
+                  {reportItems.map((report) => (
+                    <option key={report.id} value={report.id}>
+                      Select: {report.title}
+                    </option>
+                  ))}
+                </select>
+              </label>
             </div>
             <div className="flex flex-wrap gap-2">
               <button className={buttonClass} type="button" onClick={openExplorer} disabled={!config.explorerConfigured || !record.txHash.startsWith("0x")}>
@@ -624,10 +662,62 @@ function getProofStatus(report: Report): Exclude<ProofStatusFilter, "All"> {
   return report.status === "已上链" ? "已上链" : "待证明";
 }
 
-function getProofDateRangeForPreset(preset: Exclude<ProofHistoryDatePreset, "custom">): Pick<ProofHistoryFilters, "startDate" | "endDate"> {
+function recordFromReport(report: Report): AttestationRecord | null {
+  if (!report.attestation) return null;
+  return {
+    reportHash: report.attestation.reportHash,
+    evidenceHash: report.attestation.evidenceHash,
+    txHash: report.attestation.txHash,
+    walletAddress: report.attestation.walletAddress,
+    block: report.attestation.block,
+    timestamp: report.attestation.timestamp,
+    chainId: report.attestation.chainId,
+    contractAddress: report.attestation.contractAddress as AttestationRecord["contractAddress"],
+    reportId: report.attestation.reportId,
+    metadataURI: report.attestation.metadataURI,
+    explorerTxUrl: report.attestation.explorerTxUrl,
+    onChainVerification: report.attestation.onChainStatus
+      ? {
+          status: report.attestation.onChainStatus === "confirmed" ? "confirmed" : "mismatch",
+          reportId: report.attestation.reportId ?? "unknown",
+          blockNumber: report.attestation.block,
+          eventMatched: report.attestation.onChainStatus === "confirmed",
+          checkedAt: report.attestation.timestamp,
+          fieldMatches: {
+            reportHash: true,
+            evidenceHash: true,
+            topic: true,
+            riskScore: true,
+            alphaScore: true,
+            verdict: true,
+            metadataURI: true
+          }
+        }
+      : undefined
+  };
+}
+
+function toReportAttestation(record: AttestationRecord): ReportAttestation {
+  return {
+    reportHash: record.reportHash,
+    evidenceHash: record.evidenceHash,
+    txHash: record.txHash,
+    walletAddress: record.walletAddress,
+    block: record.block,
+    timestamp: record.timestamp,
+    chainId: record.chainId,
+    contractAddress: record.contractAddress,
+    reportId: record.reportId,
+    metadataURI: record.metadataURI,
+    explorerTxUrl: record.explorerTxUrl,
+    onChainStatus: record.onChainVerification?.status ?? (record.txHash.startsWith("0x") ? "pending" : undefined)
+  };
+}
+
+function getProofDateRangeForPreset(preset: Exclude<ProofHistoryDatePreset, "custom">, items: Report[] = reports): Pick<ProofHistoryFilters, "startDate" | "endDate"> {
   if (preset === "all") return { startDate: "", endDate: "" };
 
-  const anchorDate = getLatestReportDate(reports);
+  const anchorDate = getLatestReportDate(items);
   if (preset === "today") return { startDate: anchorDate, endDate: anchorDate };
 
   return {

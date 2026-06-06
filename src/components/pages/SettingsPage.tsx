@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { Bell, Check, Code2, Eye, EyeOff, KeyRound, LogOut, Shield, ShieldCheck, User, Wallet } from "lucide-react";
+import { fetchAiHealth } from "@/lib/adapters/ai-client";
 import { readBrowserAttestationConfig, readAttestationConfig } from "@/lib/adapters/attestation-client";
+import type { AiHealthStatus } from "@/lib/ai-types";
 import { useAppActions } from "@/components/shell/AppShell";
 import { Field, SelectField } from "@/components/ui/FormFields";
 import { InfoPanel } from "@/components/ui/InfoPanel";
@@ -17,6 +19,7 @@ export function SettingsPage() {
   const [apiVisible, setApiVisible] = useState(false);
   const [savedAt, setSavedAt] = useState("");
   const [chainConfig, setChainConfig] = useState(() => readAttestationConfig());
+  const [aiHealth, setAiHealth] = useState<AiHealthStatus | null>(null);
   const apiKey = "XAPI_KEY is server-side only";
   const contractValue = chainConfig.contractAddress ?? "未配置";
   const explorerValue = chainConfig.explorerBaseUrl ?? "未配置";
@@ -26,6 +29,18 @@ export function SettingsPage() {
     window.setTimeout(() => {
       if (!cancelled) setChainConfig(readBrowserAttestationConfig());
     }, 0);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchAiHealth()
+      .then((health) => {
+        if (!cancelled) setAiHealth(health);
+      })
+      .catch(() => undefined);
     return () => {
       cancelled = true;
     };
@@ -79,7 +94,7 @@ export function SettingsPage() {
           </SettingsCard>
           <SettingsCard title="模型设置" icon={Code2}>
             <div className="grid gap-3 md:grid-cols-3">
-              <SelectField label="Reasoning model" name="reasoning-model" options={["gpt-5-mini", "gpt-5", "local mock"]} />
+              <SelectField label="Reasoning model" name="reasoning-model" options={[aiHealth?.model ?? "gpt-4.1-mini", "gpt-4.1-mini", "openai-compatible"]} />
               <SelectField label="Evidence threshold" name="evidence-threshold" options={["0.65", "0.75", "0.85"]} />
               <SelectField label="Report language" name="report-language" options={["中文", "English", "双语"]} />
             </div>
@@ -90,6 +105,11 @@ export function SettingsPage() {
               <Field label="Attestation contract" name="attestation-contract" defaultValue={contractValue} />
               <Field label="Explorer" name="explorer-base-url" defaultValue={explorerValue} />
               <Field label="Wallet mode" name="wallet-mode" defaultValue={chainConfig.walletMode} />
+            </div>
+            <div className="mt-3 grid gap-3 md:grid-cols-3">
+              <Field label="AI Provider" name="ai-provider" defaultValue={aiHealth?.provider ?? "checking"} />
+              <Field label="AI Base URL" name="ai-base-url" defaultValue={aiHealth?.baseUrl ?? "server-side only"} />
+              <Field label="AI Status" name="ai-status" defaultValue={aiHealth ? `${aiHealth.mode} / configured=${aiHealth.configured}` : "checking"} />
             </div>
           </SettingsCard>
           <SettingsCard title="通知设置" icon={Bell}>
@@ -121,6 +141,7 @@ export function SettingsPage() {
             title="环境概览"
             rows={[
               ["xAPI", "server-side route"],
+              ["AI", aiHealth ? `${aiHealth.provider} / ${aiHealth.model} / ${aiHealth.mode}` : "checking"],
               ["Wallet", chainConfig.walletMode],
               ["Contract", chainConfig.contractConfigured ? contractValue : "not configured"],
               ["Explorer", chainConfig.explorerConfigured ? explorerValue : "not configured"]

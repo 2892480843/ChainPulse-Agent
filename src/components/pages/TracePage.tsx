@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import clsx from "clsx";
 import { AlertTriangle, CheckCircle2, Clock, Code2, Download, Network, Timer } from "lucide-react";
+import { fetchStoredTraces } from "@/lib/adapters/agent-data-client";
 import { getXApiRuntimeSnapshot, mockXApiClient, readWorkspaceRunTraces, type XApiRuntimeSnapshot } from "@/lib/adapters/xapi-client";
 import { xapiTraces } from "@/lib/mock-data";
 import type { XApiTrace } from "@/lib/types";
@@ -46,8 +47,12 @@ function TraceContent({ queryString }: { queryString: string }) {
       };
     }
 
-    mockXApiClient
-      .getTrace(taskId ?? "__all__")
+    fetchStoredTraces(taskId)
+      .then((result) => {
+        if (cancelled || result.length === 0) return mockXApiClient.getTrace(taskId ?? "__all__");
+        return result;
+      })
+      .catch(() => mockXApiClient.getTrace(taskId ?? "__all__"))
       .then((result) => {
         if (!cancelled) {
           setTraceState((current) => ({
@@ -124,7 +129,7 @@ function TraceContent({ queryString }: { queryString: string }) {
                   <p className="mt-2 text-xs tabular-nums text-slate-500">
                     {trace.startedAt} / {trace.latencyMs}ms / schema {trace.schemaFetched ? "yes" : "no"}
                   </p>
-                  {trace.schemaFetched ? <span className="mt-2 inline-flex rounded-full bg-blue-50 px-2 py-1 text-[11px] font-semibold text-blue-700 ring-1 ring-blue-100">schema-first</span> : null}
+                  <span className={clsx("mt-2 inline-flex rounded-full px-2 py-1 text-[11px] font-semibold ring-1", trace.source === "ai" ? "bg-violet-50 text-violet-700 ring-violet-100" : "bg-blue-50 text-blue-700 ring-blue-100")}>{trace.source === "ai" ? "AI reasoning" : trace.schemaFetched ? "schema-first" : "tool trace"}</span>
                   <p className="mt-2 text-sm text-slate-700">{trace.outputPreview}</p>
                 </button>
               );
@@ -137,7 +142,7 @@ function TraceContent({ queryString }: { queryString: string }) {
             <div>
               <h2 className="mono text-lg font-semibold text-slate-950">{selectedTrace.action}</h2>
               <p className="mt-1 text-sm text-slate-500">
-                {selectedTrace.capability} / {selectedTrace.method} / task {selectedTrace.taskId}
+                {selectedTrace.source === "ai" ? "AI reasoning" : selectedTrace.capability} / {selectedTrace.method} / task {selectedTrace.taskId}
               </p>
             </div>
             <button className={buttonClass} type="button" onClick={() => downloadJson("xapi-trace.json", traces)}>
@@ -150,7 +155,7 @@ function TraceContent({ queryString }: { queryString: string }) {
             <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
               <div className="flex items-center gap-2 font-semibold">
                 <AlertTriangle aria-hidden className="h-4 w-4" />
-                xAPI call failed / audit hold
+                {selectedTrace.source === "ai" ? "AI reasoning fallback / audit hold" : "xAPI call failed / audit hold"}
               </div>
               <p className="mt-2 leading-6">该调用没有进入推理链，保留错误输出和零值 output hash 方便人工复核。</p>
               <p className="mono mt-2" spellCheck={false}>
@@ -161,8 +166,8 @@ function TraceContent({ queryString }: { queryString: string }) {
 
           <div className="mt-4 rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm text-blue-900">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-blue-700 ring-1 ring-blue-100">schema-first call</span>
-              <span className="font-semibold">{selectedTrace.schemaFetched ? "Schema discovery was completed before this call." : "Schema discovery missing or failed."}</span>
+              <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-blue-700 ring-1 ring-blue-100">{selectedTrace.source === "ai" ? "AI reasoning" : "schema-first call"}</span>
+              <span className="font-semibold">{selectedTrace.source === "ai" ? `${selectedTrace.provider ?? "AI"} / ${selectedTrace.model ?? "model"} / ${selectedTrace.sourceMode ?? "fallback"}` : selectedTrace.schemaFetched ? "Schema discovery was completed before this call." : "Schema discovery missing or failed."}</span>
             </div>
             <p className="mt-2 text-xs leading-5 text-blue-800">评委可复核 action contract、input hash 和 output hash，确认外部证据不是页面截图。</p>
           </div>
@@ -175,6 +180,7 @@ function TraceContent({ queryString }: { queryString: string }) {
           <div className="mt-4 grid gap-3 lg:grid-cols-2">
             <HashRow label="Input Hash" value={selectedTrace.inputHash} onCopy={copyText} copiedKey={copiedKey} />
             <HashRow label="Output Hash" value={selectedTrace.outputHash} onCopy={copyText} copiedKey={copiedKey} />
+            {selectedTrace.promptHash ? <HashRow label="Prompt Hash" value={selectedTrace.promptHash} onCopy={copyText} copiedKey={copiedKey} /> : null}
           </div>
 
           <div className="mt-4 grid gap-4 lg:grid-cols-2">
@@ -264,7 +270,7 @@ function RuntimeStatusBanner({ snapshot }: { snapshot: XApiRuntimeSnapshot }) {
       "no XAPI_KEY": "未配置服务端密钥，当前使用本地 mock trace 保持演示可用",
       "upstream failed": "上游调用失败，当前使用 mock fallback 响应",
       "checking xAPI": "正在检查服务端 xAPI 代理"
-    }[snapshot.reason];
+    }[snapshot.reason as Exclude<XApiRuntimeSnapshot["reason"], "partial fallback">] ?? "partial fallback: mixed live/fallback xAPI evidence, inspect each Trace sourceMode";
 
   return (
     <div className={clsx("flex flex-col gap-2 rounded-lg border px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between", isLive ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-800")}>

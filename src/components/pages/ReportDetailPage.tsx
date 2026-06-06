@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import clsx from "clsx";
 import { ArrowLeft, CheckCircle2, Download, ExternalLink, ShieldAlert, ShieldCheck, Vote } from "lucide-react";
+import { fetchStoredReportRun } from "@/lib/adapters/agent-data-client";
 import { readAttestationConfig, verifyProofBundle, type ProofVerificationResult } from "@/lib/adapters/attestation-client";
 import { attestation, reports, xapiTraces } from "@/lib/mock-data";
 import { useAppActions } from "@/components/shell/AppShell";
@@ -17,12 +18,29 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { TokenIcon } from "@/components/ui/TokenIcon";
 import { VerdictBadge } from "@/components/ui/VerdictBadge";
 import { buttonClass, cardClass, primaryButtonClass } from "@/components/ui/styles";
+import type { EvidenceItem, Report, XApiTrace } from "@/lib/types";
 
 export function ReportDetailPage({ reportId }: { reportId: string }) {
   const { copiedKey, copyText, downloadJson, notify } = useAppActions();
-  const report = reports.find((item) => item.id === reportId);
+  const [report, setReport] = useState(() => reports.find((item) => item.id === reportId) ?? null);
+  const [tracePool, setTracePool] = useState<XApiTrace[]>(xapiTraces);
   const [verification, setVerification] = useState<ProofVerificationResult | null>(null);
   const attestationConfig = readAttestationConfig();
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchStoredReportRun(reportId)
+      .then((run) => {
+        if (!cancelled && run) {
+          setReport(run.report);
+          setTracePool([...run.traces, ...xapiTraces]);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [reportId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -56,7 +74,7 @@ export function ReportDetailPage({ reportId }: { reportId: string }) {
   }
 
   const isAttested = report.status === "已上链";
-  const relatedTraces = report.evidence.map((item) => findRelatedTrace(item.source));
+  const relatedTraces = report.evidence.map((item) => findRelatedTrace(item, tracePool));
   const linkedEvidenceCount = relatedTraces.filter(Boolean).length;
   const traceHashesPresent = relatedTraces.filter(Boolean).every((trace) => Boolean(trace?.inputHash && trace?.outputHash));
   const verdictRationale = buildVerdictRationale(report);
@@ -169,6 +187,9 @@ export function ReportDetailPage({ reportId }: { reportId: string }) {
                           <EvidenceMeta label="source" value={item.source.replace("xapi:", "")} />
                           <EvidenceMeta label="weight" value={`${Math.round(item.weight * 100)}%`} />
                           <EvidenceMeta label="contribution" value={buildEvidenceContribution(report, item)} />
+                          {item.traceId ? <EvidenceMeta label="traceId" value={item.traceId} /> : null}
+                          {typeof item.confidence === "number" ? <EvidenceMeta label="confidence" value={`${Math.round(item.confidence * 100)}%`} /> : null}
+                          {item.rawId ? <EvidenceMeta label="rawId" value={item.rawId} /> : null}
                         </div>
                       </div>
                       <div className="rounded-lg border border-slate-200 bg-white p-3">
@@ -232,6 +253,15 @@ export function ReportDetailPage({ reportId }: { reportId: string }) {
               </div>
               <HashRow label="Report Hash" value={report.reportHash} onCopy={copyText} copiedKey={copiedKey} />
               <HashRow label="Evidence Hash" value={report.evidenceHash} onCopy={copyText} copiedKey={copiedKey} />
+              {report.ai ? (
+                <div className="rounded-lg border border-violet-200 bg-violet-50 p-3">
+                  <p className="text-xs font-medium text-violet-700">AI-generated + evidence-grounded</p>
+                  <p className="mt-2 text-sm font-semibold text-slate-950">{report.ai.provider} / {report.ai.model} / {report.ai.mode}</p>
+                  <p className="mono mt-1 truncate text-xs text-violet-700">{report.ai.baseUrl}</p>
+                </div>
+              ) : null}
+              {report.ai ? <HashRow label="AI Prompt Hash" value={report.ai.promptHash} onCopy={copyText} copiedKey={copiedKey} /> : null}
+              {report.ai ? <HashRow label="AI Output Hash" value={report.ai.outputHash} onCopy={copyText} copiedKey={copiedKey} /> : null}
               {isAttested ? <HashRow label="Tx Hash" value={attestation.txHash} onCopy={copyText} copiedKey={copiedKey} /> : null}
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                 <p className="text-xs font-medium text-slate-500">证据链接状态</p>
@@ -284,12 +314,18 @@ function EvidenceMeta({ label, value }: { label: string; value: string }) {
   );
 }
 
-function findRelatedTrace(source: string) {
-  const action = source.replace("xapi:", "");
-  return xapiTraces.find((trace) => trace.action === action);
+function findRelatedTrace(item: EvidenceItem, traces: XApiTrace[]) {
+  if (item.traceId) {
+    const matchedTrace = traces.find((trace) => trace.id === item.traceId);
+    if (matchedTrace) return matchedTrace;
+  }
+  const action = item.source.replace("xapi:", "");
+  return traces.find((trace) => trace.action === action);
 }
 
-function buildVerdictRationale(report: (typeof reports)[number]) {
+function buildVerdictRationale(report: Report) {
+  if (report.rationale?.length) return report.rationale;
+
   const rationale = [
     `Verdict ${report.verdict} follows a risk score of ${report.riskScore} and confidence of ${Math.round(report.confidence * 100)}%.`,
     `${report.evidence.length} evidence items support the report, with strongest weight at ${Math.max(...report.evidence.map((item) => Math.round(item.weight * 100)))}%.`
@@ -315,7 +351,7 @@ function categorizeActions(actions: string[]) {
   ];
 }
 
-function buildEvidenceContribution(report: (typeof reports)[number], item: (typeof reports)[number]["evidence"][number]) {
+function buildEvidenceContribution(report: Report, item: EvidenceItem) {
   if (report.verdict === "CAUTION" || report.verdict === "NEGATIVE") return `raises ${report.verdict.toLowerCase()} confidence`;
   if (report.verdict === "POSITIVE") return "supports alpha momentum";
   return "keeps observe verdict grounded";

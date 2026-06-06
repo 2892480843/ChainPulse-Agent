@@ -18,7 +18,7 @@ export interface XApiServiceOptions {
 export interface XApiService {
   searchActions(query: string): Promise<XApiServiceResult<XApiActionSearchResult[]>>;
   getActionSchema(actionId: string): Promise<XApiServiceResult<XApiActionSchema>>;
-  callAction(actionId: string, input: Record<string, unknown>, taskId?: string): Promise<XApiServiceResult<XApiCallResult>>;
+  callAction(actionId: string, input: Record<string, unknown>, taskId?: string, options?: { schemaFetched?: boolean }): Promise<XApiServiceResult<XApiCallResult>>;
   healthCheck(): Promise<XApiServiceResult<XApiHealthStatus>>;
 }
 
@@ -167,7 +167,7 @@ export function createXApiService(options: XApiServiceOptions = {}): XApiService
       });
     },
 
-    async callAction(actionId, input, taskId) {
+    async callAction(actionId, input, taskId, callOptions = {}) {
       const startedAt = Date.now();
 
       if (!apiKey) {
@@ -195,14 +195,16 @@ export function createXApiService(options: XApiServiceOptions = {}): XApiService
       }
 
       try {
-        await runner(["get", actionId, "--format", "json"], {
-          env: {
-            ...env,
-            XAPI_KEY: apiKey,
-            XAPI_ACTION_HOST: host
-          },
-          timeoutMs
-        });
+        if (!callOptions.schemaFetched) {
+          await runner(["get", actionId, "--format", "json"], {
+            env: {
+              ...env,
+              XAPI_KEY: apiKey,
+              XAPI_ACTION_HOST: host
+            },
+            timeoutMs
+          });
+        }
         const raw = await runner(["call", actionId, "--input", JSON.stringify(input), "--format", "json"], {
           env: {
             ...env,

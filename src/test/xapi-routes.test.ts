@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { GET as healthGET } from "@/app/api/xapi/health/route";
 import { POST as callPOST } from "@/app/api/xapi/call/route";
 import { GET as schemaGET } from "@/app/api/xapi/schema/route";
@@ -10,6 +10,12 @@ async function readJson(response: Response) {
 }
 
 describe("xAPI route handlers", () => {
+  afterEach(() => {
+    delete process.env.AGENT_OPERATOR_TOKEN;
+    delete process.env.XAPI_ALLOWED_ACTIONS;
+    delete process.env.XAPI_ROUTE_RATE_LIMIT_PER_MIN;
+  });
+
   it("falls back when XAPI_KEY is not configured", async () => {
     delete process.env.XAPI_KEY;
 
@@ -46,6 +52,29 @@ describe("xAPI route handlers", () => {
     expect(body.trace.status).toBe("fallback");
   });
 
+  it("requires an operator token when configured", async () => {
+    process.env.AGENT_OPERATOR_TOKEN = "test-operator-token";
+
+    const response = await searchGET(new Request("http://localhost/api/xapi/search?query=crypto"));
+    const body = await readJson(response);
+
+    expect(response.status).toBe(401);
+    expect(body.ok).toBe(false);
+    expect(body.error.code).toBe("UNAUTHORIZED");
+  });
+
+  it("rejects xAPI actions outside the allowlist", async () => {
+    process.env.XAPI_ALLOWED_ACTIONS = "crypto.token.price";
+
+    const response = await schemaGET(new Request("http://localhost/api/xapi/schema?action=twitter.search_timeline"));
+    const body = await readJson(response);
+
+    expect(response.status).toBe(400);
+    expect(body.ok).toBe(false);
+    expect(body.error.code).toBe("ACTION_NOT_ALLOWED");
+  });
+
+
   it("returns 400 when schema action is missing", async () => {
     const response = await schemaGET(new Request("http://localhost/api/xapi/schema"));
     const body = await readJson(response);
@@ -72,18 +101,18 @@ describe("xAPI route handlers", () => {
   it("does not leak secrets when upstream execution fails", async () => {
     const service = createXApiService({
       env: {
-        XAPI_KEY: "sk-test-secret-123",
+        XAPI_KEY: "unit-test-secret-123",
         XAPI_ACTION_HOST: "action.xapi.to"
       },
       runner: async () => {
-        throw new Error("upstream rejected Authorization: Bearer sk-test-secret-123");
+        throw new Error("upstream rejected Authorization: Bearer unit-test-secret-123");
       }
     });
 
     const result = await service.callAction("crypto.token.price", { symbol: "ETH" }, "task_eth_risk_001");
 
     expect(result.mode).toBe("fallback");
-    expect(JSON.stringify(result)).not.toContain("sk-test-secret-123");
+    expect(JSON.stringify(result)).not.toContain("unit-test-secret-123");
     expect(result.error?.message).toContain("[redacted]");
     expect(result.trace.status).toBe("fallback");
   });
@@ -92,7 +121,7 @@ describe("xAPI route handlers", () => {
     const calls: string[][] = [];
     const service = createXApiService({
       env: {
-        XAPI_KEY: "sk-live-for-order-test",
+        XAPI_KEY: "unit-live-for-order-test",
         XAPI_ACTION_HOST: "action.xapi.to"
       },
       runner: async (args) => {

@@ -8,12 +8,22 @@ export type ReportStatus = "已完成" | "已上链" | "未上链";
 
 export type TraceStatus = "success" | "failed" | "running" | "fallback";
 
+export type SourceMode = "live" | "partial" | "fallback" | "mock";
+
+export type TraceSource = "ai" | "xapi" | "chain" | "system";
+
 export interface EvidenceItem {
   id: string;
   source: string;
   title: string;
   summary: string;
   weight: number;
+  traceId?: string;
+  sourceUrl?: string;
+  sourceTimestamp?: string;
+  rawId?: string;
+  confidence?: number;
+  sourceMode?: SourceMode;
 }
 
 export interface Report {
@@ -31,7 +41,28 @@ export interface Report {
   reportHash: string;
   evidenceHash: string;
   actions: string[];
+  rationale?: string[];
   evidence: EvidenceItem[];
+  taskId?: string;
+  traceIds?: string[];
+  sourceMode?: SourceMode;
+  attestation?: ReportAttestation;
+  ai?: import("@/lib/ai-types").AgentAiAudit;
+}
+
+export interface ReportAttestation {
+  reportHash: string;
+  evidenceHash: string;
+  txHash: string;
+  walletAddress: string;
+  block: string;
+  timestamp: string;
+  chainId?: number;
+  contractAddress?: string;
+  reportId?: string;
+  metadataURI?: string;
+  explorerTxUrl?: string;
+  onChainStatus?: "confirmed" | "mismatch" | "pending";
 }
 
 export interface RunningTask {
@@ -44,11 +75,16 @@ export interface RunningTask {
   progress: number;
   currentStep: string;
   logs: string[];
+  completedAt?: string;
+  reportId?: string;
+  traceIds?: string[];
+  sourceMode?: SourceMode;
 }
 
 export interface XApiTrace {
   id: string;
   taskId: string;
+  source?: TraceSource;
   action: string;
   capability: string;
   schemaFetched: boolean;
@@ -64,6 +100,12 @@ export interface XApiTrace {
   input: Record<string, unknown>;
   output: Record<string, unknown>;
   error?: string;
+  sourceMode?: SourceMode;
+  provider?: string;
+  model?: string;
+  baseUrl?: string;
+  promptHash?: string;
+  reasoningSummary?: string;
 }
 
 export interface WatchlistTarget {
@@ -108,9 +150,11 @@ export interface WorkspaceRunContext {
   mode: ScanMode;
   advancedFilters: WorkspaceAdvancedFilters;
   createdAt: string;
-  runtimeLabel?: "live xAPI" | "mock fallback";
-  runtimeReason?: "connected" | "no XAPI_KEY" | "upstream failed" | "checking xAPI";
+  runtimeLabel?: "live xAPI" | "partial xAPI" | "mock fallback";
+  runtimeReason?: "connected" | "partial fallback" | "no XAPI_KEY" | "upstream failed" | "checking xAPI";
   schemaFirst?: boolean;
   traceIds?: string[];
   runtimeLogs?: string[];
+  reportId?: string;
+  sourceMode?: SourceMode;
 }

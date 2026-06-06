@@ -36,19 +36,24 @@ export function fallbackActionSchema(action: string): XApiActionSchema {
 }
 
 export function fallbackCallResult(action: string, input: Record<string, unknown>): XApiCallResult {
-  const trace = findTrace(action) ?? xapiTraces[0];
+  const trace = findTrace(action);
+  const capability = trace?.capability ?? inferCapability(action);
   return {
     action,
-    capability: trace.capability,
+    capability,
     output: {
-      ...trace.output,
+      ...(trace?.output ?? { capability, source: "generated fallback" }),
       fallbackInput: input
     },
-    outputPreview: trace.outputPreview,
-    raw: {
-      source: "mock fallback",
-      traceId: trace.id
-    }
+    outputPreview: trace?.outputPreview ?? `${capability} fallback signal captured`,
+    raw: trace
+      ? {
+          source: "mock fallback",
+          traceId: trace.id
+        }
+      : {
+          source: "mock fallback"
+        }
   };
 }
 

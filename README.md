@@ -169,7 +169,7 @@ NEXT_PUBLIC_EXPLORER_BASE_URL=https://sepolia.etherscan.io
 2. 填入服务端密钥：
 
 ```env
-XAPI_KEY=sk-...
+XAPI_KEY=your-xapi-key
 XAPI_ACTION_HOST=action.xapi.to
 ```
 

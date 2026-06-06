@@ -163,23 +163,12 @@ export const mockAttestationClient: AttestationClient = {
 
   async attestReport(reportId, walletAddress) {
     const report = findReport(reportId);
-    return {
-      ...attestation,
-      reportHash: await createReportHash(report),
-      evidenceHash: await createEvidenceHash(report.evidence),
-      walletAddress,
-      metadataURI: createReportMetadataURI(report)
-    };
+    return createMockAttestationRecord(report, walletAddress);
   },
 
   async getAttestation(reportId) {
     const report = findReport(reportId);
-    return {
-      ...attestation,
-      reportHash: await createReportHash(report),
-      evidenceHash: await createEvidenceHash(report.evidence),
-      metadataURI: createReportMetadataURI(report)
-    };
+    return createMockAttestationRecord(report);
   }
 };
 
@@ -194,52 +183,7 @@ export const chainAttestationClient: AttestationClient = {
 
   async attestReport(reportId, walletAddress) {
     const report = findReport(reportId);
-    const config = readAttestationConfig();
-    const prepared = await prepareChainAttestation(report, report.evidence, config);
-    const ethereum = getBrowserEthereum();
-
-    if (!ethereum) {
-      throw new Error("browser wallet missing");
-    }
-
-    await assertBrowserChain(ethereum, config.chainId);
-
-    const txHash = (await ethereum.request({
-      method: "eth_sendTransaction",
-      params: [
-        {
-          from: walletAddress,
-          to: prepared.to,
-          data: prepared.data,
-          chainId: prepared.chainId ? `0x${prepared.chainId.toString(16)}` : undefined
-        }
-      ]
-    })) as string;
-    const receipt = await waitForTransactionReceipt(ethereum, txHash);
-    const event = findReportAttestedEvent(prepared.to, receipt.logs);
-    if (!event) {
-      throw new Error("ReportAttested event was not found in the transaction receipt");
-    }
-
-    const chainReportId = event.args.reportId;
-    const chainReport = await readChainReport(ethereum, prepared.to, chainReportId);
-    const onChainVerification = verifyChainReport(report, prepared, receipt, event, chainReport);
-
-    return {
-      reportHash: prepared.reportHash,
-      evidenceHash: prepared.evidenceHash,
-      txHash,
-      walletAddress,
-      block: receipt.blockNumber ? hexToDecimalString(receipt.blockNumber) : "confirmed",
-      timestamp: new Date().toISOString(),
-      chainId: prepared.chainId,
-      contractAddress: prepared.to,
-      reportId: chainReportId.toString(),
-      metadataURI: prepared.metadataURI,
-      explorerTxUrl: config.explorerBaseUrl ? `${config.explorerBaseUrl}/tx/${txHash}` : undefined,
-      explorerAddressUrl: prepared.explorerAddressUrl,
-      onChainVerification
-    };
+    return attestReportOnChain(report, walletAddress);
   },
 
   async getAttestation(reportId) {
@@ -264,6 +208,65 @@ export const chainAttestationClient: AttestationClient = {
     };
   }
 };
+
+export async function createMockAttestationRecord(report: Report, walletAddress = attestation.walletAddress): Promise<AttestationRecord> {
+  return {
+    ...attestation,
+    reportHash: await createReportHash(report),
+    evidenceHash: await createEvidenceHash(report.evidence),
+    walletAddress,
+    metadataURI: createReportMetadataURI(report)
+  };
+}
+
+export async function attestReportOnChain(report: Report, walletAddress: string): Promise<AttestationRecord> {
+  const config = readAttestationConfig();
+  const prepared = await prepareChainAttestation(report, report.evidence, config);
+  const ethereum = getBrowserEthereum();
+
+  if (!ethereum) {
+    throw new Error("browser wallet missing");
+  }
+
+  await assertBrowserChain(ethereum, config.chainId);
+
+  const txHash = (await ethereum.request({
+    method: "eth_sendTransaction",
+    params: [
+      {
+        from: walletAddress,
+        to: prepared.to,
+        data: prepared.data,
+        chainId: prepared.chainId ? `0x${prepared.chainId.toString(16)}` : undefined
+      }
+    ]
+  })) as string;
+  const receipt = await waitForTransactionReceipt(ethereum, txHash);
+  const event = findReportAttestedEvent(prepared.to, receipt.logs);
+  if (!event) {
+    throw new Error("ReportAttested event was not found in the transaction receipt");
+  }
+
+  const chainReportId = event.args.reportId;
+  const chainReport = await readChainReport(ethereum, prepared.to, chainReportId);
+  const onChainVerification = verifyChainReport(report, prepared, receipt, event, chainReport);
+
+  return {
+    reportHash: prepared.reportHash,
+    evidenceHash: prepared.evidenceHash,
+    txHash,
+    walletAddress,
+    block: receipt.blockNumber ? hexToDecimalString(receipt.blockNumber) : "confirmed",
+    timestamp: new Date().toISOString(),
+    chainId: prepared.chainId,
+    contractAddress: prepared.to,
+    reportId: chainReportId.toString(),
+    metadataURI: prepared.metadataURI,
+    explorerTxUrl: config.explorerBaseUrl ? `${config.explorerBaseUrl}/tx/${txHash}` : undefined,
+    explorerAddressUrl: prepared.explorerAddressUrl,
+    onChainVerification
+  };
+}
 
 export function readAttestationConfig(env: AttestationEnv = readPublicAttestationEnv(), options: { detectWallet?: boolean } = {}): AttestationConfig {
   const rawChainId = env.NEXT_PUBLIC_CHAIN_ID?.trim();
@@ -385,7 +388,13 @@ export function toEvidencePacket(evidence: EvidenceItem[]) {
     source: item.source,
     title: item.title,
     summary: item.summary,
-    weight: item.weight
+    weight: item.weight,
+    ...(item.traceId ? { traceId: item.traceId } : {}),
+    ...(item.sourceUrl ? { sourceUrl: item.sourceUrl } : {}),
+    ...(item.sourceTimestamp ? { sourceTimestamp: item.sourceTimestamp } : {}),
+    ...(item.rawId ? { rawId: item.rawId } : {}),
+    ...(typeof item.confidence === "number" ? { confidence: item.confidence } : {}),
+    ...(item.sourceMode ? { sourceMode: item.sourceMode } : {})
   }));
 }
 
