@@ -155,7 +155,7 @@ export function ReportDetailPage({ reportId }: { reportId: string }) {
             </div>
 
             <div className="grid gap-0 divide-y divide-slate-200 md:grid-cols-5 md:divide-x md:divide-y-0">
-              <AuditMetric label={copy.verdict} value={report.verdict} detail={copy.finalDecision} />
+              <AuditMetric label={copy.verdict} value={localizeVerdict(report.verdict, copy)} detail={copy.finalDecision} />
               <AuditMetric label={copy.riskScore} value={`${report.riskScore}`} detail={report.riskScore >= 60 ? copy.riskElevated : copy.riskNormal} meter={report.riskScore} />
               <AuditMetric label={copy.alphaScore} value={`${report.alphaScore}`} detail={copy.alphaDetail} meter={report.alphaScore} />
               <AuditMetric label={copy.confidence} value={`${Math.round(report.confidence * 100)}%`} detail={`${report.evidence.length} ${copy.evidenceItems}`} />
@@ -212,11 +212,11 @@ export function ReportDetailPage({ reportId }: { reportId: string }) {
               <span>{copy.contribution}</span>
               <span>{copy.traceLink}</span>
             </div>
-            <div className="mt-3 grid gap-3">
+            <div className="mt-3 grid gap-3 animate-stagger">
               {report.evidence.map((item, index) => {
                 const relatedTrace = relatedTraces[index];
                 return (
-                  <div key={item.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <div key={item.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3 transition-all duration-200 hover:border-blue-200 hover:shadow-sm">
                     <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px] lg:items-start">
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
@@ -225,18 +225,18 @@ export function ReportDetailPage({ reportId }: { reportId: string }) {
                         </div>
                         <p className="mt-2 text-sm leading-6 text-slate-600">{item.summary}</p>
                         <div className="mt-3 grid gap-2 text-xs text-slate-600 md:grid-cols-3">
-                          <EvidenceMeta label="source" value={item.source.replace("xapi:", "")} />
-                          <EvidenceMeta label="weight" value={`${Math.round(item.weight * 100)}%`} />
-                          <EvidenceMeta label="contribution" value={buildEvidenceContribution(report, item, copy)} />
+                          <EvidenceMeta label={copy.metaSource} value={item.source.replace("xapi:", "")} />
+                          <EvidenceMeta label={copy.metaWeight} value={`${Math.round(item.weight * 100)}%`} />
+                          <EvidenceMeta label={copy.metaContribution} value={buildEvidenceContribution(report, item, copy)} />
                           {item.traceId ? <EvidenceMeta label="traceId" value={item.traceId} /> : null}
-                          {typeof item.confidence === "number" ? <EvidenceMeta label="confidence" value={`${Math.round(item.confidence * 100)}%`} /> : null}
+                          {typeof item.confidence === "number" ? <EvidenceMeta label={copy.metaConfidence} value={`${Math.round(item.confidence * 100)}%`} /> : null}
                           {item.rawId ? <EvidenceMeta label="rawId" value={item.rawId} /> : null}
                         </div>
                       </div>
                       <div className="rounded-lg border border-slate-200 bg-white p-3">
                         <p className="text-xs font-semibold uppercase text-slate-500">{copy.conclusionWeight}</p>
                         <p className="mt-2 text-xl font-semibold tabular-nums text-slate-950">{Math.round(item.weight * 100)}%</p>
-                        <p className="mt-1 text-xs text-slate-500">{copy.supports} {report.verdict}</p>
+                        <p className="mt-1 text-xs text-slate-500">{copy.supports} {localizeVerdict(report.verdict, copy)}</p>
                       </div>
                     </div>
                     {relatedTrace ? (
@@ -401,6 +401,14 @@ function buildEvidenceContribution(report: Report, item: EvidenceItem, copy: Det
   return copy.supportsObserve;
 }
 
+function localizeVerdict(verdict: string, copy: DetailCopy) {
+  if ("metaSource" in copy && copy.metaSource === "来源") {
+    const map: Record<string, string> = { POSITIVE: "看多", OBSERVE: "观察", CAUTION: "谨慎", NEGATIVE: "看空" };
+    return map[verdict] ?? verdict;
+  }
+  return verdict;
+}
+
 function AuditMetric({ label, value, detail, meter }: { label: string; value: string; detail: string; meter?: number }) {
   return (
     <div className="bg-slate-50 p-4">
@@ -487,7 +495,11 @@ const detailCopy = {
     observeFallback: "Evidence is consistent enough to observe, but not strong enough to trigger an aggressive action.",
     raisesRisk: (verdict: string) => `raises ${verdict.toLowerCase()} confidence`,
     supportsAlpha: "supports alpha momentum",
-    supportsObserve: "keeps observe verdict grounded"
+    supportsObserve: "keeps observe verdict grounded",
+    metaSource: "source",
+    metaWeight: "weight",
+    metaContribution: "contribution",
+    metaConfidence: "confidence"
   },
   zh: {
     eyebrow: "报告详情",
@@ -559,6 +571,10 @@ const detailCopy = {
     observeFallback: "证据一致性足以支撑观察，但不足以触发激进动作。",
     raisesRisk: (verdict: string) => `提高 ${verdict} 置信度`,
     supportsAlpha: "支撑 Alpha 动量",
-    supportsObserve: "支撑观察结论"
+    supportsObserve: "支撑观察结论",
+    metaSource: "来源",
+    metaWeight: "权重",
+    metaContribution: "贡献",
+    metaConfidence: "置信度"
   }
 } as const;

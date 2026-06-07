@@ -8,7 +8,7 @@ import { AlertTriangle, Brain, FileText, Loader2, Play, ShieldCheck, SlidersHori
 import { fetchAiHealth } from "@/lib/adapters/ai-client";
 import { fetchStoredReports } from "@/lib/adapters/agent-data-client";
 import { AgentRunError, persistWorkspaceRun, runWorkspaceAgent, type WorkspaceAgentRunResult } from "@/lib/adapters/xapi-client";
-import { defaultWorkspaceAdvancedFilters, modeOptions } from "@/lib/navigation";
+import { defaultWorkspaceAdvancedFilters } from "@/lib/navigation";
 import type { AiHealthStatus } from "@/lib/ai-types";
 import type { Report, ScanMode, WorkspaceAdvancedFilters, WorkspaceRunContext } from "@/lib/types";
 import { useAppActions } from "@/components/shell/AppShell";
@@ -36,6 +36,7 @@ export function WorkspacePage() {
   const [recentReports, setRecentReports] = useState<Report[]>([]);
   const [reportsLoading, setReportsLoading] = useState(true);
   const [aiHealth, setAiHealth] = useState<AiHealthStatus | null>(null);
+  const [xapiLive, setXapiLive] = useState<boolean | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -61,12 +62,24 @@ export function WorkspacePage() {
         if (!cancelled) setAiHealth(health);
       })
       .catch(() => undefined);
+    fetch("/api/xapi/health", { cache: "no-store" })
+      .then((res) => res.json())
+      .then((body: { ok?: boolean; mode?: string }) => {
+        if (!cancelled) setXapiLive(body.ok === true && body.mode === "live");
+      })
+      .catch(() => {
+        if (!cancelled) setXapiLive(false);
+      });
     return () => {
       cancelled = true;
     };
   }, []);
 
   const runtimeReady = aiHealth?.mode === "live" && aiHealth.configured;
+  const bothReady = runtimeReady && xapiLive === true;
+  const liveLabel = language === "zh" ? "实时" : "live";
+  const offlineLabel = language === "zh" ? "离线" : "offline";
+  const checkingLabel = language === "zh" ? "检查中" : "checking";
   const attestedCount = useMemo(() => recentReports.filter((report) => report.status === "已上链").length, [recentReports]);
 
   function updateAdvancedFilter<Key extends keyof WorkspaceAdvancedFilters>(key: Key, value: WorkspaceAdvancedFilters[Key]) {
@@ -80,15 +93,18 @@ export function WorkspacePage() {
       topic: workspaceInput.trim() || "ETH",
       mode: selectedMode,
       advancedFilters,
+      language,
       createdAt: new Date().toLocaleTimeString("zh-CN", { hour12: false })
     };
 
     try {
+      // Call the API — it saves a "Running" placeholder and returns immediately
       const result = await runWorkspaceAgent(context);
-      persistWorkspaceRun(result);
-      setLastRun(result);
-      notify(copy.runSaved);
-      router.push(`/tasks?task=${result.taskId}`);
+      const taskId = result.taskId;
+
+      // Navigate to tasks page while agent runs in background
+      notify(language === "zh" ? "Agent 已启动，分析中..." : "Agent started, analyzing...");
+      router.push(`/tasks?task=${taskId}`);
     } catch (error) {
       const message = error instanceof AgentRunError ? `${error.code}: ${error.message}` : error instanceof Error ? error.message : copy.runFailed;
       setRunError(message);
@@ -115,8 +131,8 @@ export function WorkspacePage() {
               <p className="mt-2 text-sm leading-6 text-slate-600">{copy.runConfigDetail}</p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <RuntimePill label="AI" value={aiHealth ? `${aiHealth.provider} / ${aiHealth.model} / ${aiHealth.mode}` : copy.checking} live={runtimeReady} />
-              <RuntimePill label="Data" value={copy.realOnly} live />
+              <RuntimePill label="AI" value={aiHealth ? `${aiHealth.model} / ${language === "zh" ? (aiHealth.mode === "live" ? "实时" : "离线") : aiHealth.mode}` : copy.checking} live={runtimeReady} />
+              <RuntimePill label="xAPI MCP" value={xapiLive === null ? checkingLabel : xapiLive ? liveLabel : offlineLabel} live={xapiLive === true} />
             </div>
           </div>
 
@@ -135,14 +151,14 @@ export function WorkspacePage() {
             </label>
 
             <div className="grid gap-3 md:grid-cols-3">
-              {modeOptions.map((option) => (
+              {copy.modes.map((option) => (
                 <button
                   key={option.mode}
                   type="button"
-                  onClick={() => setSelectedMode(option.mode)}
+                  onClick={() => setSelectedMode(option.mode as ScanMode)}
                   className={clsx(
-                    "cursor-pointer rounded-lg border p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-100 active:scale-[0.98]",
-                    selectedMode === option.mode ? "border-blue-300 bg-blue-50" : "border-slate-200 bg-white hover:border-blue-200 hover:bg-slate-50"
+                    "cursor-pointer rounded-lg border p-4 text-left transition-all duration-200 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-100 active:scale-[0.98]",
+                    selectedMode === option.mode ? "border-blue-300 bg-blue-50 shadow-md shadow-blue-100/60" : "border-slate-200 bg-white hover:border-blue-200 hover:bg-blue-50/30 hover:-translate-y-0.5 hover:shadow-md hover:shadow-slate-100"
                   )}
                 >
                   <p className="text-sm font-semibold text-slate-950">{option.title}</p>
@@ -206,8 +222,17 @@ export function WorkspacePage() {
 
             <div className="flex flex-wrap gap-2">
               <button className={primaryButtonClass} type="button" onClick={runAgent} disabled={isRunning}>
-                {isRunning ? <Loader2 aria-hidden className="h-4 w-4 animate-spin" /> : <Play aria-hidden className="h-4 w-4" />}
-                {isRunning ? copy.running : copy.runAgent}
+                {isRunning ? (
+                  <>
+                    <Loader2 aria-hidden className="h-4 w-4 animate-spin" />
+                    {copy.running}
+                  </>
+                ) : (
+                  <>
+                    <Play aria-hidden className="h-4 w-4" />
+                    {copy.runAgent}
+                  </>
+                )}
               </button>
               {exampleTargets.map((sample) => (
                 <button key={sample} type="button" className={buttonClass} onClick={() => setWorkspaceInput(sample)}>
@@ -226,7 +251,7 @@ export function WorkspacePage() {
             <div className="mt-3 grid gap-2">
               <Requirement ok={Boolean(aiHealth?.configured)} label="AI_API_KEY" />
               <Requirement ok={Boolean(aiHealth?.enabled)} label="AI_ENABLED" />
-              <Requirement ok={true} label={copy.operatorSession} />
+              <Requirement ok={xapiLive === true} label="XAPI_KEY (MCP)" />
             </div>
           </div>
         </aside>
@@ -234,7 +259,20 @@ export function WorkspacePage() {
 
       <div className={clsx(cardClass, "overflow-hidden")}>
         <SectionHeader title={copy.recentReports} action={copy.backendOnly} />
-        {recentReports.length === 0 ? (
+        {reportsLoading ? (
+          <div className="border-t border-slate-200 divide-y divide-slate-100">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-4 px-4 py-3">
+                <div className="skeleton h-7 w-7 rounded-full shrink-0" />
+                <div className="flex-1 space-y-2">
+                  <div className="skeleton h-3 w-1/3 rounded" />
+                  <div className="skeleton h-2.5 w-1/4 rounded" />
+                </div>
+                <div className="skeleton h-5 w-14 rounded-full" />
+              </div>
+            ))}
+          </div>
+        ) : recentReports.length === 0 ? (
           <EmptyState title={copy.noReports} detail={copy.noReportsDetail} />
         ) : (
           <div className="thin-scrollbar overflow-x-auto border-t border-slate-200">
@@ -336,17 +374,22 @@ function RunFact({ label, value }: { label: string; value: string }) {
 }
 
 function formatRuntimeLabel(label: WorkspaceAgentRunResult["label"], language: "en" | "zh") {
-  if (label === "unavailable") return language === "zh" ? "不可用" : "Unavailable";
+  if (language === "zh") {
+    if (label === "unavailable") return "不可用";
+    if (label === "live xAPI") return "xAPI 实时";
+    if (label === "partial xAPI") return "xAPI 部分";
+    return label;
+  }
   return label;
 }
 
 const workspaceCopy = {
   en: {
-    eyebrow: "Workspace",
-    title: "Run Real Agent",
-    description: "Connect a wallet, run OpenAI-compatible reasoning, collect live xAPI evidence, then save a backend report ready for user-wallet attestation.",
-    runConfig: "Run configuration",
-    runConfigDetail: "The backend requires AI_API_KEY and XAPI_KEY. Missing keys stop the run instead of creating mock evidence.",
+    eyebrow: "Intelligence",
+    title: "ChainPulse Analysis",
+    description: "Enter any token, DAO proposal, or on-chain event. The AI Agent collects multi-source evidence via xAPI MCP, produces an auditable risk/alpha report, and anchors the findings on Sepolia.",
+    runConfig: "Analysis configuration",
+    runConfigDetail: "The agent collects evidence via xAPI MCP and reasons via AI API. All data is real — no mocked evidence.",
     checking: "checking",
     realOnly: "live only",
     target: "Investigation target",
@@ -356,14 +399,14 @@ const workspaceCopy = {
     confidence: "Minimum confidence",
     toolScope: "Tool scope",
     realRunBlocked: "Real Agent run blocked",
-    runSaved: "Real Agent run saved",
-    runFailed: "Real Agent run failed",
+    runSaved: "Agent run saved",
+    runFailed: "Agent run failed",
     runtime: "Runtime",
     tools: "Tools",
     unavailable: "unavailable",
     aiPlanCreated: "AI plan created",
-    running: "Running...",
-    runAgent: "Run Agent",
+    running: "Analyzing...",
+    runAgent: "Start Analysis",
     backendReports: "Backend reports",
     loadingReports: "loading backend store",
     persistedOnly: "persisted Agent output only",
@@ -379,14 +422,19 @@ const workspaceCopy = {
     mode: "Mode",
     risk: "Risk",
     verdict: "Verdict",
-    status: "Status"
+    status: "Status",
+    modes: [
+      { mode: "Alpha Scan", title: "Alpha Scan", description: "Track opportunity signals from news, social data, and market movement." },
+      { mode: "Risk Scan", title: "Risk Scan", description: "Identify manipulation risk, abnormal volatility, and conflicting evidence." },
+      { mode: "DAO 尽调", title: "DAO Review", description: "Generate a reviewable pre-vote report for governance proposals." }
+    ]
   },
   zh: {
-    eyebrow: "工作台",
-    title: "运行真实 Agent",
-    description: "连接钱包后，通过 OpenAI 兼容推理层规划任务，调用真实 xAPI 采集证据，并把后端报告交给用户钱包上链证明。",
-    runConfig: "运行配置",
-    runConfigDetail: "后端必须配置 AI_API_KEY 和 XAPI_KEY。缺少密钥会停止运行，不会创建 mock 证据。",
+    eyebrow: "情报分析",
+    title: "ChainPulse 智能分析",
+    description: "输入任意代币、DAO 提案或链上事件，AI Agent 通过 xAPI MCP 协议实时采集多源证据，生成可审计的风险/Alpha 报告，并将报告和证据哈希永久写入 Sepolia。",
+    runConfig: "分析配置",
+    runConfigDetail: "Agent 通过 xAPI MCP 采集实时数据，通过 AI 接口完成推理分析。所有数据均为真实数据，不会生成 mock 证据。",
     checking: "检查中",
     realOnly: "仅真实数据",
     target: "分析目标",
@@ -402,8 +450,8 @@ const workspaceCopy = {
     tools: "工具",
     unavailable: "不可用",
     aiPlanCreated: "AI 计划已生成",
-    running: "运行中...",
-    runAgent: "运行 Agent",
+    running: "分析中...",
+    runAgent: "开始分析",
     backendReports: "后端报告",
     loadingReports: "正在读取后端存储",
     persistedOnly: "仅持久化 Agent 输出",
@@ -419,6 +467,11 @@ const workspaceCopy = {
     mode: "模式",
     risk: "风险",
     verdict: "结论",
-    status: "状态"
+    status: "状态",
+    modes: [
+      { mode: "Alpha Scan", title: "Alpha 扫描", description: "从新闻、社交数据和市场波动中追踪机会信号。" },
+      { mode: "Risk Scan", title: "风险扫描", description: "识别操纵风险、异常波动和多源证据冲突。" },
+      { mode: "DAO 尽调", title: "DAO 尽调", description: "为治理投票前生成可审查的证据包和尽调报告。" }
+    ]
   }
 } as const;

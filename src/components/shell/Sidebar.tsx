@@ -40,8 +40,8 @@ export function Sidebar() {
         </div>
       </div>
 
-      <nav className="mt-5 space-y-1">
-        {navigationItems.map((item) => {
+      <nav className="mt-5 space-y-0.5">
+        {navigationItems.map((item, index) => {
           const Icon = iconMap[item.key];
           const active = pathname === item.path || pathname?.startsWith(`${item.path}/`);
           return (
@@ -49,21 +49,27 @@ export function Sidebar() {
               key={item.key}
               href={item.path}
               aria-current={active ? "page" : undefined}
+              style={{ animationDelay: `${index * 40}ms` }}
               className={clsx(
-                "inline-flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors duration-200 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-100",
-                active ? "bg-blue-50 text-blue-700 ring-1 ring-blue-100" : "text-slate-600 hover:bg-slate-50 hover:text-slate-950"
+                "animate-stagger inline-flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-100",
+                active
+                  ? "bg-blue-50 text-blue-700 shadow-[inset_0_0_0_1px_rgba(59,130,246,0.12)]"
+                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-950 hover:translate-x-0.5"
               )}
             >
-              <Icon aria-hidden className="h-4 w-4" />
+              <span className={clsx("grid h-7 w-7 shrink-0 place-items-center rounded-md transition-colors", active ? "bg-blue-100 text-blue-700" : "text-slate-400 group-hover:text-slate-600")}>
+                <Icon aria-hidden className="h-4 w-4" />
+              </span>
               <span>{t(`nav.${item.key}`)}</span>
+              {active && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-blue-500" />}
             </Link>
           );
         })}
       </nav>
 
       <div className="mt-5 grid gap-3">
-        <QuotaCard label={t("shell.evidenceQuota")} value="72%" detail="14,280 / 20,000 calls" tone="blue" />
-        <QuotaCard label={t("shell.agentCapacity")} value="18/25" detail="7 runs available today" tone="green" />
+        <QuotaCard label={t("shell.evidenceQuota")} value="72%" detail={t("shell.evidenceQuotaDetail")} tone="blue" />
+        <QuotaCard label={t("shell.agentCapacity")} value="18/25" detail={t("shell.agentCapacityDetail")} tone="green" />
       </div>
 
       <div className="mt-5 space-y-1 border-t border-slate-200 pt-4 text-xs text-slate-500">

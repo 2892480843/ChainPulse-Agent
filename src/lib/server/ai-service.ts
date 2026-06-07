@@ -122,21 +122,10 @@ async function generateAi<T>(options: AiGenerateOptions, config: AiConfig, fetch
         model,
         temperature,
         messages: [
-          { role: "system", content: options.system },
+          { role: "system", content: options.schema ? `${options.system}\n\nIMPORTANT: You must respond with valid JSON only. No explanation, no markdown, just a JSON object matching this schema: ${JSON.stringify(options.schema)}` : options.system },
           { role: "user", content: options.user }
         ],
-        ...(options.schema
-          ? {
-              response_format: {
-                type: "json_schema",
-                json_schema: {
-                  name: "chainpulse_ai_result",
-                  schema: options.schema,
-                  strict: true
-                }
-              }
-            }
-          : {})
+        ...(options.schema ? { response_format: { type: "json_object" } } : {})
       }),
       signal: controller.signal
     });
@@ -258,10 +247,29 @@ function failedResult<T = unknown>({
 }
 
 function parseJsonContent(content: string): { ok: true; value: unknown } | { ok: false; message: string } {
+  const trimmed = content.trim();
   try {
-    return { ok: true, value: JSON.parse(content) };
+    return { ok: true, value: JSON.parse(trimmed) };
   } catch {
-    return { ok: false, message: "AI response was not valid JSON" };
+    // Try to extract JSON from markdown code blocks
+    const codeBlockMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (codeBlockMatch) {
+      try {
+        return { ok: true, value: JSON.parse(codeBlockMatch[1].trim()) };
+      } catch {
+        // fall through
+      }
+    }
+    // Try to extract first {...} block
+    const jsonMatch = trimmed.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      try {
+        return { ok: true, value: JSON.parse(jsonMatch[0]) };
+      } catch {
+        // fall through
+      }
+    }
+    return { ok: false, message: `AI response was not valid JSON: ${trimmed.slice(0, 100)}` };
   }
 }
 

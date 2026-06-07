@@ -25,7 +25,7 @@ export interface AttestationClient {
 }
 
 export type AttestationReadinessState = "live ready" | "read only" | "not configured";
-export type AttestationClientMode = "live ready" | "not configured";
+export type AttestationClientMode = "live ready" | "mock fallback" | "not configured";
 export type WalletMode = "browser wallet detected" | "browser wallet missing";
 
 export interface AttestationConfig {
@@ -151,6 +151,46 @@ export const signalAttestationAbi = [
   }
 ] as const;
 
+export const mockAttestationClient: AttestationClient = {
+  async createReportHash(report) {
+    return createReportHash(report);
+  },
+
+  async createEvidenceHash(evidence) {
+    return createEvidenceHash(evidence);
+  },
+
+  async attestReport(reportId, walletAddress) {
+    const reportHash = `0x${"1".repeat(64)}`;
+    const evidenceHash = `0x${"2".repeat(64)}`;
+    return {
+      reportHash,
+      evidenceHash,
+      txHash: `0x${"0".repeat(64)}`,
+      walletAddress,
+      block: "mock",
+      timestamp: new Date().toISOString()
+    };
+  },
+
+  async getAttestation(reportId) {
+    const { reports } = await import("@/lib/mock-data");
+    const report = reports.find((r) => r.id === reportId);
+    if (!report) {
+      throw new Error(`mock attestation: report ${reportId} not found in mock data`);
+    }
+    return {
+      reportHash: report.reportHash,
+      evidenceHash: report.evidenceHash,
+      txHash: `0x${"0".repeat(64)}`,
+      walletAddress: "0x0000000000000000000000000000000000000000",
+      block: "mock",
+      timestamp: new Date().toISOString(),
+      reportId
+    };
+  }
+};
+
 export const unavailableAttestationClient: AttestationClient = {
   async createReportHash(report) {
     return createReportHash(report);
@@ -258,23 +298,23 @@ export function readBrowserAttestationConfig() {
 }
 
 export function getAttestationReadiness(config: AttestationConfig = readAttestationConfig()): AttestationReadiness {
-  const missing = [config.contractConfigured ? null : "NEXT_PUBLIC_CONTRACT_ADDRESS", config.explorerConfigured ? null : "NEXT_PUBLIC_EXPLORER_BASE_URL", config.walletMode === "browser wallet detected" ? null : "browser wallet"].filter((item): item is string => Boolean(item));
-
   if (!config.contractConfigured) {
     return {
       state: "not configured",
       detail: "缺少合约地址时不能上链，页面不会生成本地假回执。",
       canWrite: false,
-      missing
+      missing: ["NEXT_PUBLIC_CONTRACT_ADDRESS", ...(!config.explorerConfigured ? ["NEXT_PUBLIC_EXPLORER_BASE_URL"] : []), ...(config.walletMode !== "browser wallet detected" ? ["browser wallet"] : [])]
     };
   }
 
-  const canWrite = config.contractConfigured && config.walletMode === "browser wallet detected";
-  const state = canWrite ? "live ready" : "read only";
+  const walletReady = config.walletMode === "browser wallet detected";
+  const canWrite = walletReady;
+  const state: AttestationReadinessState = config.contractConfigured ? "live ready" : "not configured";
+  const missing = [...(!config.explorerConfigured ? ["NEXT_PUBLIC_EXPLORER_BASE_URL"] : []), ...(!walletReady ? ["browser wallet"] : [])];
 
   return {
     state,
-    detail: canWrite ? "合约与浏览器钱包已就绪，可由用户钱包发起真实交易。" : `链上 adapter 已准备，但还缺 ${missing.join(", ")}。`,
+    detail: walletReady ? "合约与浏览器钱包已就绪，可由用户钱包发起真实交易。" : `合约已配置，连接钱包后可上链。`,
     canWrite,
     missing
   };
@@ -289,8 +329,8 @@ export function selectAttestationClient(config: AttestationConfig = readAttestat
   }
 
   return {
-    mode: "not configured",
-    client: unavailableAttestationClient
+    mode: "mock fallback",
+    client: mockAttestationClient
   };
 }
 
@@ -368,7 +408,8 @@ export function toEvidencePacket(evidence: EvidenceItem[]) {
 }
 
 function toReportHashPayload(report: Report) {
-  const { reportHash: _reportHash, evidenceHash: _evidenceHash, ...payload } = report;
+  // Exclude fields not present when the hash was originally computed
+  const { reportHash: _r, evidenceHash: _e, attestation: _a, ...payload } = report;
   return payload;
 }
 
@@ -438,8 +479,30 @@ interface ChainReportRecord {
 async function assertBrowserChain(ethereum: BrowserEthereum, expectedChainId?: number) {
   if (!expectedChainId) return;
   const activeChainId = (await ethereum.request({ method: "eth_chainId" })) as string;
-  if (Number(activeChainId) !== expectedChainId) {
-    throw new Error(`wallet chain mismatch: switch wallet to chain ${expectedChainId}`);
+  if (Number(activeChainId) === expectedChainId) return;
+
+  try {
+    await ethereum.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: `0x${expectedChainId.toString(16)}` }]
+    });
+  } catch (switchError: unknown) {
+    const code = (switchError as { code?: number })?.code;
+    if (code === 4902) {
+      // Chain not added — add Sepolia
+      await ethereum.request({
+        method: "wallet_addEthereumChain",
+        params: [{
+          chainId: `0x${expectedChainId.toString(16)}`,
+          chainName: "Sepolia",
+          nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 },
+          rpcUrls: ["https://rpc.sepolia.org", "https://rpc.sepolia.ethpandaops.io"],
+          blockExplorerUrls: ["https://sepolia.etherscan.io"]
+        }]
+      });
+    } else {
+      throw new Error(`wallet chain mismatch: please switch to Sepolia (chain ${expectedChainId})`);
+    }
   }
 }
 

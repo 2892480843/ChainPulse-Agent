@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc *)",
+      "Bash(npm run *)",
+      "Bash(curl -s http://localhost:3000/api/xapi/health)",
+      "Bash(curl -s -X POST -H \"Content-Type: application/json\" -H \"Accept: application/json, text/event-stream\" -d '{\"jsonrpc\":\"2.0\",\"method\":\"tools/call\",\"params\":{\"name\":\"SEARCH\",\"arguments\":{\"query\":\"news search\",\"page_size\":5}},\"id\":30}' \"https://mcp.xapi.to/mcp?apikey=sk-1351a4a7ad7be538273ba13b49d7185b0f757d4f4342df50\")",
+      "Bash(curl -s -X POST -H \"Content-Type: application/json\" -H \"Accept: application/json, text/event-stream\" -d '{\"jsonrpc\":\"2.0\",\"method\":\"tools/call\",\"params\":{\"name\":\"GET\",\"arguments\":{\"action_id\":\"ai.text.chat.fast\"}},\"id\":50}' \"https://mcp.xapi.to/mcp?apikey=sk-1351a4a7ad7be538273ba13b49d7185b0f757d4f4342df50\")",
+      "Bash(curl -s -X POST -H \"Content-Type: application/json\" -H \"Accept: application/json, text/event-stream\" -d '{\"jsonrpc\":\"2.0\",\"method\":\"tools/call\",\"params\":{\"name\":\"CALL\",\"arguments\":{\"action_id\":\"ai.text.chat.fast\",\"arguments\":{\"messages\":[{\"role\":\"user\",\"content\":\"Brief ZEC crypto analysis\"}],\"model\":\"qwen/qwen3.6-flash\"}}},\"id\":51}' \"https://mcp.xapi.to/mcp?apikey=sk-1351a4a7ad7be538273ba13b49d7185b0f757d4f4342df50\")",
+      "Bash(npm test *)",
+      "Bash(pkill -f \"next dev\")",
+      "Bash(curl -s http://localhost:3000 -I)",
+      "Bash(curl -s http://localhost:3000/workspace)",
+      "Bash(curl -s http://localhost:3000/api/ai/health)",
+      "Bash(grep -v \"//\")",
+      "Bash(curl -s -X POST -H \"Content-Type: application/json\" -d '{\"topic\":\"ETH\",\"mode\":\"Risk Scan\",\"advancedFilters\":{\"evidenceWindow\":\"24h\",\"minimumConfidence\":\"0.75\",\"xapiClasses\":\"Twitter + Web + News + Crypto\"},\"createdAt\":\"02:00:00\"}' http://localhost:3000/api/agent/run)",
+      "Bash(curl -s -X POST -H \"Content-Type: application/json\" -d '{\"topic\":\"BTC\",\"mode\":\"Risk Scan\",\"advancedFilters\":{\"evidenceWindow\":\"7d\",\"minimumConfidence\":\"0.75\",\"xapiClasses\":\"Twitter + Web + News + Crypto\"},\"language\":\"zh\",\"createdAt\":\"02:15:00\"}' http://localhost:3000/api/agent/run)",
+      "Bash(curl -s -X POST -H \"Content-Type: application/json\" -d '{\"topic\":\"ETH\",\"mode\":\"Risk Scan\",\"advancedFilters\":{\"evidenceWindow\":\"24h\",\"minimumConfidence\":\"0.75\",\"xapiClasses\":\"Twitter + Web + News + Crypto\"},\"language\":\"zh\",\"createdAt\":\"02:13:00\"}' http://localhost:3000/api/agent/run)",
+      "Bash(curl -s \"http://localhost:3000/api/tasks/cp-run-mq35cjtr\")",
+      "Bash(curl -s \"http://localhost:3000/api/reports/rep_eth_mq35dok2\")",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); r=d['data']['report']; print\\('reportHash matches:', r['reportHash'][:10]\\)\")",
+      "Bash(time curl -s -X POST -H \"Content-Type: application/json\" -d '{\"topic\":\"AAVE\",\"mode\":\"Alpha Scan\",\"advancedFilters\":{\"evidenceWindow\":\"7d\",\"minimumConfidence\":\"0.75\",\"xapiClasses\":\"Crypto + AI\"},\"language\":\"zh\",\"createdAt\":\"02:20:00\"}' http://localhost:3000/api/agent/run)",
+      "Bash(curl -s \"http://localhost:3000/api/tasks/cp-run-mq35hdze\")",
+      "Bash(curl -v \"http://localhost:3000/api/tasks/cp-run-mq35hdze\")",
+      "Bash(curl -s \"http://localhost:3000/api/tasks/cp-run-mq35rw5u\")"
+    ]
+  }
+}

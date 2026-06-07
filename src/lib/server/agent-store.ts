@@ -29,6 +29,49 @@ export function setAgentStorePathForTest(filePath: string | null) {
   storePathOverride = filePath;
 }
 
+export async function saveRunningTaskPlaceholder(taskId: string, context: { topic: string; mode: string; createdAt: string }) {
+  const now = new Date().toISOString();
+  const writeTask = writeQueue.then(async () => {
+    const snapshot = await readAgentStore();
+    const placeholder: RunningTask = {
+      id: taskId,
+      topic: context.topic.toUpperCase().replace(/^\$/, ""),
+      mode: context.mode as RunningTask["mode"],
+      status: "Running",
+      startedAt: context.createdAt || new Date().toLocaleTimeString("zh-CN", { hour12: false }),
+      elapsed: "00m 00s",
+      progress: 5,
+      currentStep: "初始化 Agent...",
+      logs: [`[${context.createdAt}] 正在启动 ChainPulse Agent...`]
+    };
+    const nextSnapshot: AgentStoreSnapshot = {
+      version: 1,
+      runs: snapshot.runs,
+      tasks: upsertById(snapshot.tasks, placeholder, (item) => item.id),
+      reports: snapshot.reports,
+      traces: snapshot.traces
+    };
+    await writeAgentStore(nextSnapshot);
+  });
+  writeQueue = writeTask.catch(() => undefined);
+  return writeTask;
+}
+
+export async function updateRunningTaskProgress(taskId: string, currentStep: string, progress: number) {
+  const writeTask = writeQueue.then(async () => {
+    const snapshot = await readAgentStore();
+    const nextTasks = snapshot.tasks.map((task) =>
+      task.id === taskId && task.status === "Running"
+        ? { ...task, currentStep, progress }
+        : task
+    );
+    if (nextTasks === snapshot.tasks) return; // no change
+    await writeAgentStore({ ...snapshot, tasks: nextTasks });
+  });
+  writeQueue = writeTask.catch(() => undefined);
+  return writeTask;
+}
+
 export async function saveAgentRun(run: StoredAgentRun) {
   const writeTask = writeQueue.then(async () => {
     const snapshot = await readAgentStore();
@@ -89,7 +132,24 @@ export async function listStoredTasks() {
 
 export async function getStoredTaskRun(taskId: string) {
   const snapshot = await readAgentStore();
-  return snapshot.runs.find((run) => run.task.id === taskId);
+  // First check full runs (has report, traces, etc.)
+  const fullRun = snapshot.runs.find((run) => run.task.id === taskId);
+  if (fullRun) return fullRun;
+  // Fall back to task-only placeholder (Running state)
+  const placeholderTask = snapshot.tasks.find((task) => task.id === taskId);
+  if (placeholderTask) {
+    return {
+      task: placeholderTask,
+      report: null as never,
+      traces: [],
+      context: null as never,
+      sourceMode: "fallback" as const,
+      ai: null as never,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+  }
+  return undefined;
 }
 
 export async function listStoredReports() {

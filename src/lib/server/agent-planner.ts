@@ -27,8 +27,9 @@ export async function planAgentTools({
 }): Promise<AgentPlanResult> {
   const tools = buildAvailableTools(context, candidates ?? [], availableTools);
   const fallbackPlan = createRuleBasedAgentPlan(context, candidates ?? [], tools);
+  const isZh = context.language === "zh";
   const aiResult = await aiService.generate<AgentPlan>({
-    system: "You are the planning layer for ChainPulse, an AI blockchain research agent. Select evidence tools only from the provided allowlist. Return compact JSON only.",
+    system: `You are the planning layer for ChainPulse, an AI blockchain research agent. Select evidence tools only from the provided allowlist. Return compact JSON only.${isZh ? " All text fields must be written in Simplified Chinese (简体中文)." : ""}`,
     user: JSON.stringify({
       task: "Create an auditable evidence collection plan before any tool execution.",
       topic: context.topic,
@@ -36,7 +37,8 @@ export async function planAgentTools({
       evidenceWindow: context.advancedFilters.evidenceWindow,
       minimumConfidence: context.advancedFilters.minimumConfidence,
       xapiClasses: context.advancedFilters.xapiClasses,
-      availableTools: tools
+      availableTools: tools,
+      outputLanguage: isZh ? "zh-CN" : "en"
     }),
     schema: agentPlanSchema
   });
@@ -65,7 +67,7 @@ export function buildAvailableTools(context: WorkspaceRunContext, candidates: XA
   const searched = candidates.map((candidate) => candidate.action);
   const unique = dedupe([...providedTools, ...preferred, ...searched]);
   const allowed = filterAllowedXApiActions(unique);
-  return allowed.length > 0 ? allowed : ["twitter.search_timeline", "web.search.realtime", "crypto.token.price"];
+  return allowed.length > 0 ? allowed : ["twitter.search", "web.search.realtime", "crypto.token.price"];
 }
 
 export function createRuleBasedAgentPlan(context: WorkspaceRunContext, candidates: XApiActionSearchResult[] = [], availableTools?: string[]): AgentPlan {
@@ -76,7 +78,7 @@ export function createRuleBasedAgentPlan(context: WorkspaceRunContext, candidate
 
   return {
     objective: `${topic} ${context.mode} evidence plan`,
-    selectedTools: selectedTools.length > 0 ? selectedTools : ["twitter.search_timeline", "web.search.realtime", "crypto.token.price"],
+    selectedTools: selectedTools.length > 0 ? selectedTools : ["twitter.search", "web.search.realtime", "crypto.token.price"],
     reason: "Rule planner selected a balanced xAPI evidence mix because AI planning was unavailable or invalid.",
     evidenceStrategy: `Collect cross-source evidence over ${context.advancedFilters.evidenceWindow}, then normalize every tool output with trace hashes before report writing.`,
     riskQuestions: [
@@ -111,18 +113,18 @@ function preferredActionsForContext(context: WorkspaceRunContext) {
   const classes = context.advancedFilters.xapiClasses;
 
   if (classes === "Web + News + AI") {
-    return ["web.search.realtime", "news.search.latest", "ai.text.summarize", "web.page.extract"];
+    return ["web.search.realtime", "web.search.news", "ai.text.summarize", "ai.text.chat.fast"];
   }
 
   if (classes === "Crypto + AI") {
-    return ["crypto.token.price", "crypto.token.holders", "ai.text.summarize", "web.search.realtime"];
+    return ["crypto.token.price", "crypto.token.metadata", "ai.text.summarize", "web.search.realtime"];
   }
 
   if (context.mode.includes("DAO")) {
-    return ["web.search.realtime", "news.search.latest", "twitter.search_timeline", "ai.text.summarize"];
+    return ["web.search.realtime", "web.search.news", "twitter.search", "ai.text.summarize"];
   }
 
-  return ["twitter.search_timeline", "web.search.realtime", "news.search.latest", "crypto.token.price"];
+  return ["twitter.search", "web.search.realtime", "web.search.news", "crypto.token.price"];
 }
 
 function dedupe(items: string[]) {

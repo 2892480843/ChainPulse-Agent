@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { decodeFunctionData, encodeAbiParameters, encodeEventTopics, encodeFunctionResult } from "viem";
 import {
-  chainAttestationClient,
+  attestReportOnChain,
   createDeterministicHash,
   createEvidenceHash,
   createReportHash,
@@ -171,7 +171,7 @@ describe("attestation adapter and proof hashing", () => {
     });
     (window as Window & { ethereum?: { request: typeof request } }).ethereum = { request };
 
-    const record = await chainAttestationClient.attestReport(reports[0].id, walletAddress);
+    const record = await attestReportOnChain(reports[0], walletAddress);
 
     expect(record.txHash).toBe(txHash);
     expect(record.block).toBe("42");

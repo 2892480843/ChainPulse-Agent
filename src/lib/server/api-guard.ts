@@ -22,11 +22,11 @@ const defaultReadLimit = 120;
 export const operatorCookieName = "chainpulse_operator_token";
 const defaultAllowedActions = [
   "ai.text.summarize",
-  "crypto.token.holders",
+  "ai.text.chat.fast",
   "crypto.token.price",
-  "news.search.latest",
-  "twitter.search_timeline",
-  "web.page.extract",
+  "crypto.token.metadata",
+  "twitter.search",
+  "web.search.news",
   "web.search.realtime"
 ];
 

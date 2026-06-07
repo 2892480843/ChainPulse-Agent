@@ -323,12 +323,29 @@ function RuntimeStatusBanner({ snapshot, language }: { snapshot: XApiRuntimeSnap
   return (
     <div className={clsx("flex flex-col gap-2 rounded-lg border px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between", isLive ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-800")}>
       <div className="flex flex-wrap items-center gap-2">
-        <span className={clsx("rounded-full px-2.5 py-1 text-xs font-semibold ring-1", isLive ? "bg-white text-emerald-700 ring-emerald-100" : "bg-white text-amber-700 ring-amber-100")}>{snapshot.label}</span>
-        <span className="font-semibold">{snapshot.reason}</span>
+        <span className={clsx("rounded-full px-2.5 py-1 text-xs font-semibold ring-1", isLive ? "bg-white text-emerald-700 ring-emerald-100" : "bg-white text-amber-700 ring-amber-100")}>
+          {language === "zh" ? localizeSnapshotLabel(snapshot.label) : snapshot.label}
+        </span>
+        <span className="font-semibold">{language === "zh" ? localizeSnapshotReason(snapshot.reason) : snapshot.reason}</span>
       </div>
       <p className="text-xs leading-5 sm:text-right">{detail}</p>
     </div>
   );
+}
+
+function localizeSnapshotLabel(label: string) {
+  if (label === "live xAPI") return "xAPI 实时";
+  if (label === "partial xAPI") return "xAPI 部分";
+  return "xAPI 不可用";
+}
+
+function localizeSnapshotReason(reason: string) {
+  if (reason === "connected") return "已连接";
+  if (reason === "no XAPI_KEY") return "缺少密钥";
+  if (reason === "upstream failed") return "上游失败";
+  if (reason === "partial fallback") return "部分降级";
+  if (reason === "checking xAPI") return "检查中";
+  return reason;
 }
 
 function readTraceQuery(queryString: string) {

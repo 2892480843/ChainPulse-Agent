@@ -27,8 +27,12 @@ export async function writeAgentReportDraft({
   aiService?: AiService;
 }): Promise<ReportDraftResult> {
   const fallbackDraft = createHeuristicReportDraft({ context, evidence, traces, sourceMode });
+  const isZh = context.language === "zh";
+  const langInstruction = isZh
+    ? "IMPORTANT: Write ALL text fields (title, summary, rationale, actions) in Simplified Chinese (简体中文). The report should be in Chinese."
+    : "Write all text fields in English.";
   const aiResult = await aiService.generate<AiReportDraft>({
-    system: "You are the report-writing layer for ChainPulse, an AI blockchain research agent. Use only the supplied evidence. Return compact JSON only.",
+    system: `You are the report-writing layer for ChainPulse, an AI blockchain research agent. Use only the supplied evidence. Return compact JSON only. ${langInstruction}`,
     user: JSON.stringify({
       task: "Write an evidence-grounded blockchain risk/alpha report draft.",
       context,
@@ -42,7 +46,8 @@ export async function writeAgentReportDraft({
         sourceMode: trace.sourceMode,
         outputPreview: trace.outputPreview
       })),
-      sourceMode
+      sourceMode,
+      outputLanguage: isZh ? "zh-CN" : "en"
     }),
     schema: reportDraftSchema
   });
@@ -92,29 +97,65 @@ export function createHeuristicReportDraft({
 
 function validateReportDraft(value: unknown): AiReportDraft | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const record = value as Partial<AiReportDraft>;
-  const verdict = record.verdict;
+  const record = value as Partial<AiReportDraft> & Record<string, unknown>;
+  const verdict = normalizeVerdict(record.verdict);
   const riskScore = clampScoreInput(record.riskScore);
   const alphaScore = clampScoreInput(record.alphaScore);
-  const confidence = clampConfidenceInput(record.confidence);
-  const rationale = Array.isArray(record.rationale) ? record.rationale.filter((item): item is string => typeof item === "string" && item.trim().length > 0).slice(0, 8) : [];
-  const actions = Array.isArray(record.actions) ? record.actions.filter((item): item is string => typeof item === "string" && item.trim().length > 0).slice(0, 8) : [];
+  const confidence = normalizeConfidence(record.confidence);
+  const rationale = extractStringArray(record.rationale ?? record.reasoning ?? record.analysis);
+  const actions = extractStringArray(record.actions ?? record.recommendations ?? record.next_steps);
 
-  if (typeof record.title !== "string" || !record.title.trim()) return null;
-  if (typeof record.summary !== "string" || !record.summary.trim()) return null;
-  if (!isVerdict(verdict)) return null;
+  const title = (typeof record.title === "string" ? record.title.trim() : "") ||
+    (typeof record.heading === "string" ? record.heading.trim() : "");
+  const summary = (typeof record.summary === "string" ? record.summary.trim() : "") ||
+    (typeof record.overview === "string" ? record.overview.trim() : "") ||
+    (typeof record.description === "string" ? record.description.trim() : "");
+
+  if (!title) return null;
+  if (!summary) return null;
+  if (!verdict) return null;
   if (riskScore === null || alphaScore === null || confidence === null) return null;
 
   return {
-    title: record.title.trim(),
-    summary: record.summary.trim(),
+    title,
+    summary,
     verdict,
     riskScore,
     alphaScore,
     confidence,
-    rationale: rationale.length > 0 ? rationale : ["AI draft supplied a valid score but no rationale."],
+    rationale: rationale.length > 0 ? rationale : ["AI analysis completed."],
     actions: actions.length > 0 ? actions : ["Review the evidence packet before taking action."]
   };
+}
+
+function normalizeVerdict(value: unknown): Verdict | null {
+  if (typeof value !== "string") return null;
+  const upper = value.toUpperCase().trim();
+  // Direct match
+  if (upper === "POSITIVE" || upper === "OBSERVE" || upper === "CAUTION" || upper === "NEGATIVE") return upper as Verdict;
+  // Common synonyms
+  if (upper === "BULLISH" || upper === "BUY" || upper === "STRONG_BUY") return "POSITIVE";
+  if (upper === "BEARISH" || upper === "SELL" || upper === "STRONG_SELL" || upper === "RISK") return "NEGATIVE";
+  if (upper === "NEUTRAL" || upper === "HOLD" || upper === "WATCH" || upper === "INSUFFICIENT_DATA") return "OBSERVE";
+  if (upper === "WARNING" || upper === "ALERT" || upper === "MODERATE_RISK") return "CAUTION";
+  return null;
+}
+
+function normalizeConfidence(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  // Handle 0-100 range (model might return 75 instead of 0.75)
+  if (value > 1 && value <= 100) return round(value / 100, 2);
+  if (value < 0 || value > 1) return null;
+  return round(value, 2);
+}
+
+function extractStringArray(value: unknown): string[] {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((item) => item.trim()).slice(0, 8);
+  }
+  if (typeof value === "string" && value.trim()) return [value.trim()];
+  return [];
 }
 
 function scoreReport(mode: ScanMode, sourceMode: SourceMode, evidence: EvidenceItem[], traces: XApiTrace[]) {
@@ -152,9 +193,6 @@ function createReportActions(scores: ReturnType<typeof scoreReport>) {
   return ["Observe the target over the next evidence window.", "Re-run the agent if a watchlist threshold changes."];
 }
 
-function isVerdict(value: unknown): value is Verdict {
-  return value === "POSITIVE" || value === "OBSERVE" || value === "CAUTION" || value === "NEGATIVE";
-}
 
 function clampScoreInput(value: unknown) {
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 100) return null;

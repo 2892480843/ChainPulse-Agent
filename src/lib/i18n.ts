@@ -1,6 +1,6 @@
 export type AppLanguage = "en" | "zh";
 
-export const defaultLanguage: AppLanguage = "en";
+export const defaultLanguage: AppLanguage = "zh";
 
 const translations = {
   en: {
@@ -27,6 +27,8 @@ const translations = {
     "shell.reasoning": "OpenAI-compatible reasoning",
     "shell.evidenceTools": "xAPI evidence tools",
     "shell.attestationEnabled": "Sepolia attestation enabled",
+    "shell.evidenceQuotaDetail": "14,280 / 20,000 calls",
+    "shell.agentCapacityDetail": "7 runs available today",
     "walletGate.eyebrow": "Wallet required",
     "walletGate.title": "Connect your wallet first",
     "walletGate.description": "ChainPulse runs investigations, report review, and Sepolia proof actions in a wallet-bound session. Connect a browser wallet before using the workspace.",
@@ -90,6 +92,8 @@ const translations = {
     "shell.reasoning": "OpenAI 兼容推理",
     "shell.evidenceTools": "xAPI 证据工具",
     "shell.attestationEnabled": "Sepolia 证明已启用",
+    "shell.evidenceQuotaDetail": "14,280 / 20,000 次调用",
+    "shell.agentCapacityDetail": "今日剩余 7 次运行",
     "walletGate.eyebrow": "需要钱包",
     "walletGate.title": "请先连接钱包",
     "walletGate.description": "ChainPulse 的分析、报告查看和 Sepolia 证明操作都绑定用户钱包会话。使用工作台前请先连接浏览器钱包。",

@@ -112,11 +112,31 @@ async function runWorkspaceAgentOnServer(context: WorkspaceRunContext): Promise<
   if (!response.ok) {
     throw new AgentRunError(body.error ?? { code: "AGENT_RUN_FAILED", message: `agent run failed: ${response.status}`, recoverable: true });
   }
-  if (!body.ok || !body.data) {
+  if (!body.ok) {
     throw new AgentRunError(body.error ?? { code: "AGENT_RUN_FAILED", message: "agent run failed", recoverable: true });
   }
 
-  const run = body.data;
+  // New: API returns immediately with just taskId (background run)
+  const rawData = body.data as unknown as Record<string, unknown>;
+  if (rawData && typeof rawData.taskId === "string" && !("task" in rawData)) {
+    return {
+      taskId: rawData.taskId as string,
+      context: { ...context, taskId: rawData.taskId as string },
+      label: "live xAPI",
+      reason: "connected",
+      mode: "live",
+      action: "xapi.agent",
+      schemaFirst: true,
+      traces: [],
+      logs: []
+    };
+  }
+
+  // Legacy: full run data returned synchronously
+  const run = body.data as import("@/lib/agent-types").StoredAgentRun;
+  if (!run || !run.task) {
+    throw new AgentRunError({ code: "AGENT_RUN_FAILED", message: "agent run returned no data", recoverable: true });
+  }
   const action = run.traces.find((trace) => trace.method === "POST" && !trace.action.startsWith("xapi."))?.action ?? "xapi.agent";
   const label: XApiRuntimeSnapshot["label"] = run.sourceMode === "live" ? "live xAPI" : run.sourceMode === "partial" ? "partial xAPI" : "unavailable";
   const reason: XApiRuntimeSnapshot["reason"] = run.context.runtimeReason ?? (run.sourceMode === "live" ? "connected" : run.sourceMode === "partial" ? "partial fallback" : "upstream failed");
@@ -134,7 +154,7 @@ async function runWorkspaceAgentOnServer(context: WorkspaceRunContext): Promise<
     task: run.task,
     report: run.report,
     sourceMode: run.sourceMode,
-    ai: run.ai ?? run.report.ai
+    ai: run.ai ?? run.report?.ai
   };
 }
 

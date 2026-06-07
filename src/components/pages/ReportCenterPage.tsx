@@ -137,9 +137,9 @@ function ReportCenterContent({ initialFilters }: { initialFilters: ReportFilters
                   spellCheck={false}
                 />
               </label>
-              <SelectFilter label={copy.mode} value={filters.mode} options={["All", "Alpha Scan", "Risk Scan", "DAO 尽调"]} onChange={(value) => setFilters({ ...filters, mode: value as ReportFilters["mode"] })} />
-              <SelectFilter label={copy.verdict} value={filters.verdict} options={["All", "POSITIVE", "OBSERVE", "CAUTION", "NEGATIVE"]} onChange={(value) => setFilters({ ...filters, verdict: value as ReportFilters["verdict"] })} />
-              <SelectFilter label={copy.status} value={filters.status} options={["All", "已上链", "未上链", "已完成"]} onChange={(value) => setFilters({ ...filters, status: value as ReportFilters["status"] })} />
+              <SelectFilter label={copy.mode} value={filters.mode} options={["All", "Alpha Scan", "Risk Scan", "DAO 尽调"]} optionLabels={{ All: copy.filterAll, "Alpha Scan": copy.modeAlpha, "Risk Scan": copy.modeRisk, "DAO 尽调": "DAO 尽调" }} onChange={(value) => setFilters({ ...filters, mode: value as ReportFilters["mode"] })} />
+              <SelectFilter label={copy.verdict} value={filters.verdict} options={["All", "POSITIVE", "OBSERVE", "CAUTION", "NEGATIVE"]} optionLabels={{ All: copy.filterAll, POSITIVE: copy.verdictPositive, OBSERVE: copy.verdictObserve, CAUTION: copy.verdictCaution, NEGATIVE: copy.verdictNegative }} onChange={(value) => setFilters({ ...filters, verdict: value as ReportFilters["verdict"] })} />
+              <SelectFilter label={copy.status} value={filters.status} options={["All", "已上链", "未上链", "已完成"]} optionLabels={{ All: copy.filterAll, "已上链": copy.statusAttested, "未上链": copy.statusPending, "已完成": copy.statusCompleted }} onChange={(value) => setFilters({ ...filters, status: value as ReportFilters["status"] })} />
               <label className="grid gap-1 lg:col-span-1">
                 <span className="text-xs font-medium text-slate-600">{copy.minRisk}</span>
                 <input className={inputClass} name="min-risk" type="number" min={0} max={100} inputMode="numeric" value={filters.minRisk} autoComplete="off" onChange={(event) => updateRisk("minRisk", event.target.value)} />
@@ -171,27 +171,38 @@ function ReportCenterContent({ initialFilters }: { initialFilters: ReportFilters
           ) : null}
 
           {loading ? (
-            <EmptyState title={copy.loading} detail={copy.loadingDetail} />
+            <div className="divide-y divide-slate-100">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="flex items-center gap-4 px-4 py-3">
+                  <div className="skeleton h-8 w-8 rounded-full" />
+                  <div className="flex-1 space-y-2">
+                    <div className="skeleton h-3.5 w-2/5 rounded" />
+                    <div className="skeleton h-3 w-3/5 rounded" />
+                  </div>
+                  <div className="skeleton h-5 w-16 rounded-full" />
+                </div>
+              ))}
+            </div>
           ) : filteredReports.length === 0 ? (
             <EmptyState title={reportItems.length === 0 ? copy.emptyTitle : copy.noMatches} detail={reportItems.length === 0 ? copy.emptyDetail : copy.noMatchesDetail} />
           ) : (
             <div className="thin-scrollbar overflow-x-auto">
-              <table className="w-full min-w-[900px] text-left text-sm">
+              <table className="w-full min-w-[980px] text-left text-sm">
                 <thead className="bg-slate-50 text-xs uppercase text-slate-500">
                   <tr>
                     <th className="px-4 py-3">{copy.report}</th>
-                    <th className="px-4 py-3">{copy.mode}</th>
-                    <th className="px-4 py-3">{copy.risk}</th>
-                    <th className="px-4 py-3">{copy.evidence}</th>
-                    <th className="px-4 py-3">{copy.created}</th>
-                    <th className="px-4 py-3">{copy.verdict}</th>
-                    <th className="px-4 py-3">{copy.status}</th>
-                    <th className="px-4 py-3 text-center">{copy.action}</th>
+                    <th className="px-4 py-3 whitespace-nowrap">{copy.mode}</th>
+                    <th className="px-4 py-3 whitespace-nowrap w-32">{copy.risk}</th>
+                    <th className="px-4 py-3 whitespace-nowrap">{copy.evidence}</th>
+                    <th className="px-4 py-3 whitespace-nowrap">{copy.created}</th>
+                    <th className="px-4 py-3 whitespace-nowrap w-24">{copy.verdict}</th>
+                    <th className="px-4 py-3 whitespace-nowrap w-28">{copy.status}</th>
+                    <th className="px-4 py-3 text-center whitespace-nowrap w-20">{copy.action}</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-slate-100 animate-stagger">
                   {filteredReports.map((report) => (
-                    <tr key={report.id} className="group hover:bg-slate-50">
+                    <tr key={report.id} className="group hover:bg-slate-50 transition-colors duration-150">
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
                           <TokenIcon symbol={report.topic} />
@@ -249,13 +260,13 @@ function ReportCenterContent({ initialFilters }: { initialFilters: ReportFilters
   );
 }
 
-function SelectFilter({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange: (value: string) => void }) {
+function SelectFilter({ label, value, options, optionLabels, onChange }: { label: string; value: string; options: string[]; optionLabels?: Record<string, string>; onChange: (value: string) => void }) {
   return (
     <label className="grid gap-1 lg:col-span-2">
       <span className="text-xs font-medium text-slate-600">{label}</span>
       <select name={label} className={inputClass} value={value} autoComplete="off" onChange={(event) => onChange(event.target.value)}>
         {options.map((option) => (
-          <option key={option}>{option}</option>
+          <option key={option} value={option}>{optionLabels?.[option] ?? option}</option>
         ))}
       </select>
     </label>
@@ -378,7 +389,17 @@ const reportCopy = {
     proofCoverage: "Proof coverage",
     userWalletOnly: "user-wallet writes only",
     dataBoundary: "Data boundary",
-    dataBoundaryDetail: "Reports are created by /api/agent/run after live AI and live xAPI evidence complete. Missing configuration returns an error instead of mock data."
+    dataBoundaryDetail: "Reports are created by /api/agent/run after live AI and live xAPI evidence complete. Missing configuration returns an error instead of mock data.",
+    filterAll: "All",
+    modeAlpha: "Alpha Scan",
+    modeRisk: "Risk Scan",
+    verdictPositive: "POSITIVE",
+    verdictObserve: "OBSERVE",
+    verdictCaution: "CAUTION",
+    verdictNegative: "NEGATIVE",
+    statusAttested: "Attested",
+    statusPending: "Pending",
+    statusCompleted: "Completed"
   },
   zh: {
     eyebrow: "报告",
@@ -419,6 +440,16 @@ const reportCopy = {
     proofCoverage: "证明覆盖率",
     userWalletOnly: "仅用户钱包写入",
     dataBoundary: "数据边界",
-    dataBoundaryDetail: "报告只能由 /api/agent/run 在真实 AI 和真实 xAPI 证据完成后创建。缺少配置会返回错误，不会生成 mock 数据。"
+    dataBoundaryDetail: "报告只能由 /api/agent/run 在真实 AI 和真实 xAPI 证据完成后创建。缺少配置会返回错误，不会生成 mock 数据。",
+    filterAll: "全部",
+    modeAlpha: "Alpha 扫描",
+    modeRisk: "风险扫描",
+    verdictPositive: "看多",
+    verdictObserve: "观察",
+    verdictCaution: "谨慎",
+    verdictNegative: "看空",
+    statusAttested: "已上链",
+    statusPending: "待上链",
+    statusCompleted: "已完成"
   }
 } as const;

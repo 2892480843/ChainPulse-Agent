@@ -16,7 +16,7 @@ export function Header() {
         <GlobalSearch />
         <div className="flex shrink-0 items-center gap-2">
           <span className="hidden items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 md:inline-flex">
-            <span className="h-2 w-2 rounded-full bg-emerald-500" />
+            <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
             {t("header.operational")}
           </span>
           <button className="inline-flex h-10 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 transition-colors duration-200 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-100" type="button" aria-label={t("language.switch")} onClick={toggleLanguage} data-language={language}>

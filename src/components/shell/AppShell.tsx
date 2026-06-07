@@ -5,6 +5,7 @@ import { ShieldCheck, Wallet } from "lucide-react";
 import { AppActionsContext, type AppActions } from "./AppContext";
 import { Footer } from "./Footer";
 import { Header } from "./Header";
+import { OnboardingGuide } from "./OnboardingGuide";
 import { Sidebar } from "./Sidebar";
 import { PageHeading } from "@/components/ui/PageHeading";
 import { Toast } from "@/components/ui/Toast";
@@ -153,6 +154,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <Footer />
         </div>
         {toast ? <Toast message={toast} /> : null}
+        <OnboardingGuide />
       </div>
     </AppActionsContext.Provider>
   );

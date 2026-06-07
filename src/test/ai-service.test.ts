@@ -119,7 +119,7 @@ describe("AI planner and report writer", () => {
               message: {
                 content: JSON.stringify({
                   objective: "ETH risk review",
-                  selectedTools: ["twitter.search_timeline", "web.search.realtime"],
+                  selectedTools: ["twitter.search", "web.search.realtime"],
                   reason: "Cross-check social and web evidence.",
                   evidenceStrategy: "Collect live evidence and compare narratives.",
                   riskQuestions: ["Are signals consistent?"]
@@ -133,11 +133,11 @@ describe("AI planner and report writer", () => {
     const result = await planAgentTools({
       context,
       aiService: service,
-      availableTools: ["twitter.search_timeline", "web.search.realtime"]
+      availableTools: ["twitter.search", "web.search.realtime"]
     });
 
     expect(result.mode).toBe("live");
-    expect(result.plan.selectedTools).toEqual(["twitter.search_timeline", "web.search.realtime"]);
+    expect(result.plan.selectedTools).toEqual(["twitter.search", "web.search.realtime"]);
   });
 
   it("falls back when the AI report writer returns invalid JSON", async () => {

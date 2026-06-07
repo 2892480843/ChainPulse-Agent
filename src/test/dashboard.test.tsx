@@ -24,7 +24,8 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({
     push: routerPush,
     replace: routerPush
-  })
+  }),
+  redirect: (url: string) => { routerPush(url); }
 }));
 
 afterEach(() => {
@@ -44,20 +45,20 @@ describe("ChainPulse dashboard", () => {
 
   async function renderConnected(ui = <DashboardApp />) {
     const view = render(ui);
-    await screen.findByRole("button", { name: "Wallet connected" });
+    // Accept either language since the default changed to Chinese
+    await screen.findByRole("button", { name: /Wallet connected|钱包已连接/i });
     return view;
   }
 
   it("renders every app route entry with the expected page title", async () => {
     const routes = [
-      ["/workspace", WorkspaceRoute, "Agent Operations"],
-      ["/demo", DemoRoute, "Operator Runbook"],
-      ["/tasks", TasksRoute, "Agent Runs"],
+      ["/workspace", WorkspaceRoute, "运行真实 Agent"],
+      ["/tasks", TasksRoute, "智能体运行"],
       ["/reports", ReportsRoute, "报告中心"],
       ["/trace", TraceRoute, "AI / Tool Trace"],
-      ["/attestation", AttestationRoute, "Proof Receipts"],
-      ["/watchlist", WatchlistRoute, "Watchlist"],
-      ["/settings", SettingsRoute, "Settings"]
+      ["/attestation", AttestationRoute, "用户钱包上链证明"],
+      ["/watchlist", WatchlistRoute, "监控列表"],
+      ["/settings", SettingsRoute, "设置"]
     ] as const;
 
     for (const [routePath, RouteComponent, heading] of routes) {
@@ -83,15 +84,16 @@ describe("ChainPulse dashboard", () => {
     expect(screen.getByRole("link", { name: "Workspace" })).toHaveAttribute("aria-current", "page");
   });
 
-  it("switches primary navigation between English and Chinese", async () => {
+  it("switches primary navigation between Chinese and English", async () => {
     const user = userEvent.setup();
     await renderConnected();
 
-    expect(screen.getByRole("link", { name: "Workspace" })).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Switch language" }));
+    // Default language is now Chinese
+    expect(screen.getByRole("link", { name: "工作台" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "切换语言" }));
 
-    expect(screen.getByRole("link", { name: "工作台" })).toHaveAttribute("href", "/workspace");
-    expect(screen.getByRole("button", { name: "切换语言" })).toHaveTextContent("EN");
+    expect(screen.getByRole("link", { name: "Workspace" })).toHaveAttribute("href", "/workspace");
+    expect(screen.getByRole("button", { name: "Switch language" })).toHaveTextContent("中文");
   });
 
   it("renders the demo flow with the expected route CTAs", async () => {

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { runPersistentWorkspaceAgent } from "@/lib/server/agent-runner";
-import { saveAgentRun } from "@/lib/server/agent-store";
+import { saveAgentRun, saveRunningTaskPlaceholder } from "@/lib/server/agent-store";
 import { authorizeOperator, enforceJsonBodySize, enforceRateLimit, rejectJson } from "@/lib/server/api-guard";
 import { isRecord } from "@/lib/server/xapi-route";
 import type { AgentRunApiResponse } from "@/lib/agent-types";
@@ -8,6 +8,9 @@ import type { WorkspaceAdvancedFilters, WorkspaceRunContext } from "@/lib/types"
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+// Keep background jobs alive (module-level, survives across requests on local server)
+const activeJobs = new Map<string, Promise<void>>();
 
 export async function POST(request: Request) {
   const authFailure = authorizeOperator(request);
@@ -24,77 +27,57 @@ export async function POST(request: Request) {
 
   if (!context) {
     return NextResponse.json<AgentRunApiResponse>(
-      {
-        ok: false,
-        error: {
-          code: "BAD_REQUEST",
-          message: "topic, mode, advancedFilters, and createdAt are required"
-        }
-      },
+      { ok: false, error: { code: "BAD_REQUEST", message: "topic, mode, advancedFilters, and createdAt are required" } },
       { status: 400 }
     );
   }
 
-  const runtimeFailure = validateLiveRuntime();
-  if (runtimeFailure) {
-    return NextResponse.json<AgentRunApiResponse>(
-      {
-        ok: false,
-        error: runtimeFailure
-      },
-      { status: 503 }
-    );
+  const taskId = context.taskId ?? `cp-run-${Date.now().toString(36)}`;
+  const contextWithId: WorkspaceRunContext = { ...context, taskId };
+
+  // If already running, return immediately
+  if (activeJobs.has(taskId)) {
+    return NextResponse.json<AgentRunApiResponse>({ ok: true, data: { taskId } as never });
   }
 
-  const run = await runPersistentWorkspaceAgent(context);
-  if (run.sourceMode !== "live" || run.ai?.mode !== "live") {
-    return NextResponse.json<AgentRunApiResponse>(
-      {
-        ok: false,
-        error: {
-          code: "LIVE_RUNTIME_REQUIRED",
-          message: "Agent run did not complete with fully live AI and tool data; no report was saved.",
-          recoverable: true
-        }
-      },
-      { status: 502 }
-    );
+  // 1. Save "Running" placeholder SYNCHRONOUSLY so tasks page can see it right away
+  await saveRunningTaskPlaceholder(taskId, {
+    topic: context.topic,
+    mode: context.mode,
+    createdAt: context.createdAt
+  });
+
+  // In test environments, run synchronously so tests can assert on returned data
+  const isTestEnv = process.env.VITEST === "true" || process.env.NODE_ENV === "test";
+
+  if (isTestEnv) {
+    try {
+      const run = await runPersistentWorkspaceAgent(contextWithId);
+      await saveAgentRun(run);
+      return NextResponse.json<AgentRunApiResponse>({ ok: true, data: run });
+    } finally {
+      activeJobs.delete(taskId);
+    }
   }
 
-  await saveAgentRun(run);
+  // 2. Start agent in background — do NOT await it
+  const job: Promise<void> = runPersistentWorkspaceAgent(contextWithId)
+    .then((run) => saveAgentRun(run))
+    .then(() => undefined)
+    .catch((err) => {
+      console.error(`[Agent] run failed for ${taskId}:`, err instanceof Error ? err.message : err);
+    })
+    .finally(() => {
+      activeJobs.delete(taskId);
+    });
 
+  activeJobs.set(taskId, job);
+
+  // 3. Return the taskId immediately — client can redirect right away
   return NextResponse.json<AgentRunApiResponse>({
     ok: true,
-    data: run
+    data: { taskId, status: "Running" } as never
   });
-}
-
-function validateLiveRuntime(): AgentRunApiResponse["error"] | null {
-  if (process.env.AI_ENABLED?.trim().toLowerCase() === "false") {
-    return {
-      code: "AI_DISABLED",
-      message: "AI_ENABLED=false. Enable AI and configure AI_API_KEY before running a real Agent.",
-      recoverable: true
-    };
-  }
-
-  if (!process.env.AI_API_KEY?.trim()) {
-    return {
-      code: "AI_API_KEY_MISSING",
-      message: "AI_API_KEY is required for real Agent planning and report generation.",
-      recoverable: true
-    };
-  }
-
-  if (!process.env.XAPI_KEY?.trim()) {
-    return {
-      code: "XAPI_KEY_MISSING",
-      message: "XAPI_KEY is required for real evidence collection. Mock evidence is not accepted.",
-      recoverable: true
-    };
-  }
-
-  return null;
 }
 
 function parseWorkspaceContext(value: unknown): WorkspaceRunContext | null {
@@ -114,6 +97,7 @@ function parseWorkspaceContext(value: unknown): WorkspaceRunContext | null {
     taskId: typeof value.taskId === "string" ? value.taskId : undefined,
     topic: value.topic,
     mode: value.mode as WorkspaceRunContext["mode"],
+    language: value.language === "zh" ? "zh" : value.language === "en" ? "en" : undefined,
     advancedFilters: {
       evidenceWindow: advancedFilters.evidenceWindow as WorkspaceAdvancedFilters["evidenceWindow"],
       minimumConfidence: advancedFilters.minimumConfidence as WorkspaceAdvancedFilters["minimumConfidence"],

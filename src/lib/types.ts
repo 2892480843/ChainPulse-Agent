@@ -150,6 +150,7 @@ export interface WorkspaceRunContext {
   mode: ScanMode;
   advancedFilters: WorkspaceAdvancedFilters;
   createdAt: string;
+  language?: "en" | "zh";
   runtimeLabel?: "live xAPI" | "partial xAPI" | "unavailable";
   runtimeReason?: "connected" | "partial fallback" | "no XAPI_KEY" | "upstream failed" | "checking xAPI";
   schemaFirst?: boolean;

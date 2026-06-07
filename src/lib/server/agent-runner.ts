@@ -1,8 +1,10 @@
 import { createXApiService } from "@/lib/server/xapi-service";
 import { createAiService } from "@/lib/server/ai-service";
 import { hashJson } from "@/lib/server/xapi-trace";
+import { getSchemaInputKeys } from "@/lib/server/xapi-normalize";
 import { planAgentTools } from "@/lib/server/agent-planner";
 import { writeAgentReportDraft } from "@/lib/server/report-writer";
+import { updateRunningTaskProgress } from "@/lib/server/agent-store";
 import { timelineSteps } from "@/lib/navigation";
 import type { AgentAiAudit, AgentToolCallAudit, AiGenerateResult } from "@/lib/ai-types";
 import type { StoredAgentRun } from "@/lib/agent-types";
@@ -18,23 +20,36 @@ export async function runPersistentWorkspaceAgent(context: WorkspaceRunContext):
   const aiService = createAiService();
   const query = normalizeTopicQuery(context.topic);
 
+  // Progress helper — fire-and-forget, never blocks the agent
+  const progress = (step: string, pct: number) => {
+    updateRunningTaskProgress(taskId, step, pct).catch(() => undefined);
+  };
+
+  progress("正在检查 xAPI 连接...", 10);
   const health = await service.healthCheck();
+  progress("正在搜索可用工具...", 18);
   const search = await service.searchActions(query);
+  progress("AI 正在规划分析方案...", 28);
   const planResult = await planAgentTools({
     context,
     candidates: search.data,
     aiService
   });
   const actions = planResult.plan.selectedTools;
+  progress(`已确认 ${actions.length} 个数据源，开始采集...`, 38);
   const schemaResults: Array<XApiServiceResult<XApiActionSchema>> = [];
   const callResults: Array<XApiServiceResult<XApiCallResult>> = [];
 
-  for (const action of actions) {
+  for (let i = 0; i < actions.length; i++) {
+    const action = actions[i];
+    const pct = Math.round(38 + ((i + 1) / actions.length) * 32);
+    progress(`正在采集 ${action} 数据...`, pct);
     const schema = await service.getActionSchema(action);
     schemaResults.push(schema);
     const callInput = buildActionInput(context, action, schema.data);
     callResults.push(await service.callAction(action, callInput, taskId, { schemaFetched: true }));
   }
+  progress("AI 正在分析证据并生成报告...", 75);
 
   const xapiTraces = [
     serviceResultToTrace(health, {
@@ -72,6 +87,7 @@ export async function runPersistentWorkspaceAgent(context: WorkspaceRunContext):
   ];
   const toolSourceMode = resolveXApiSourceMode([health.mode, search.mode, ...schemaResults.map((result) => result.mode), ...callResults.map((result) => result.mode)]);
   const evidence = normalizeEvidence(callResults, xapiTraces);
+  progress("AI 正在生成最终报告...", 82);
   const reportDraftResult = await writeAgentReportDraft({
     context,
     evidence,
@@ -138,33 +154,80 @@ export async function runPersistentWorkspaceAgent(context: WorkspaceRunContext):
   };
 }
 
+function evidenceWindowToTimeRange(window: string): string {
+  if (window === "7d") return "week";
+  if (window === "30d") return "month";
+  return "day";
+}
+
 function buildActionInput(context: WorkspaceRunContext, action: string, schema?: XApiActionSchema): Record<string, unknown> {
   const topic = normalizeTopicQuery(context.topic);
-  const schemaKeys = Object.keys(schema?.input ?? {});
+  const schemaKeys = getSchemaInputKeys(schema?.input);
+  const timeRange = evidenceWindowToTimeRange(context.advancedFilters.evidenceWindow);
 
-  if (action.startsWith("crypto.") || schemaKeys.includes("symbol")) {
+  if (action === "crypto.token.price") {
+    return { token: topic.toUpperCase(), chain: "eth" };
+  }
+
+  if (action === "crypto.token.holders" || action === "crypto.token.metadata") {
+    return { token: topic.toUpperCase(), chain: "eth" };
+  }
+
+  if (action.startsWith("crypto.") || schemaKeys.includes("token") || schemaKeys.includes("symbol")) {
+    return { token: topic.toUpperCase(), chain: "eth" };
+  }
+
+  if (action === "twitter.search" || action === "twitter.search_timeline") {
+    const twitterWindow = context.advancedFilters.evidenceWindow === "30d" ? "30d" : context.advancedFilters.evidenceWindow === "7d" ? "7d" : "24h";
+    return { raw_query: `${topic} crypto ${twitterWindow}`, sort_by: "Latest" };
+  }
+
+  if (action === "web.search.realtime" || action === "web.search") {
+    return { q: `${topic} ${context.mode} crypto`, timeRange };
+  }
+
+  if (action === "web.search.news") {
+    return { q: `${topic} crypto news`, timeRange };
+  }
+
+  if (action === "ai.text.summarize") {
     return {
-      symbol: topic.toUpperCase(),
-      window: context.advancedFilters.evidenceWindow,
-      minimumConfidence: Number(context.advancedFilters.minimumConfidence)
+      text: `${topic} crypto market analysis for ${context.mode} - provide key insights about price, social sentiment, and risk factors`,
+      model: "qwen/qwen3.6-flash",
+      language: "en",
+      style: "bullet_points",
+      max_length: 150
+    };
+  }
+
+  if (action === "ai.text.chat.fast") {
+    return {
+      messages: [
+        { role: "system", content: "Reply in 2-3 sentences max." },
+        { role: "user", content: `${topic} ${context.mode}: summarize key signals.` }
+      ],
+      model: "qwen/qwen3.6-flash",
+      max_tokens: 120
     };
   }
 
   if (action.startsWith("ai.")) {
-    return {
-      text: `${context.topic} ${context.mode}`,
-      task: "summarize cross-source crypto risk evidence",
-      minimumConfidence: Number(context.advancedFilters.minimumConfidence)
-    };
+    return { text: `${topic} crypto ${context.mode} analysis`, model: "qwen/qwen3.6-flash" };
   }
 
-  return {
-    query: context.topic,
-    mode: context.mode,
-    freshness: context.advancedFilters.evidenceWindow,
-    minimumConfidence: Number(context.advancedFilters.minimumConfidence),
-    xapiClasses: context.advancedFilters.xapiClasses
-  };
+  if (action === "news.search.latest") {
+    return { q: `${topic} crypto`, timeRange: "day" };
+  }
+
+  if (schemaKeys.includes("q")) {
+    return { q: `${topic} ${context.mode} crypto` };
+  }
+
+  if (schemaKeys.includes("query") || schemaKeys.includes("raw_query")) {
+    return { query: `${topic} crypto ${context.mode}`, raw_query: `${topic} crypto` };
+  }
+
+  return { q: `${topic} ${context.mode} crypto` };
 }
 
 function serviceResultToTrace<T>(
@@ -278,8 +341,8 @@ function normalizeEvidence(callResults: Array<XApiServiceResult<XApiCallResult>>
     return compactObject({
       id: `ev_${trace.taskId}_${index + 1}`,
       source: `xapi:${trace.action}`,
-      title: `${trace.capability} signal`,
-      summary: trace.outputPreview,
+      title: `${trace.capability} signal (${trace.action})`,
+      summary: stripModePrefix(trace.outputPreview),
       weight: round(Math.max(0.12, confidence / total), 3),
       traceId: trace.id,
       sourceUrl: findStringValue(output, ["url", "link", "sourceUrl"]),
@@ -502,7 +565,7 @@ function pendingReportStatus() {
 }
 
 function toEvidencePacket(evidence: EvidenceItem[]) {
-  return evidence.map((item) => ({
+  const raw = evidence.map((item) => ({
     id: item.id,
     source: item.source,
     title: item.title,
@@ -515,11 +578,14 @@ function toEvidencePacket(evidence: EvidenceItem[]) {
     ...(typeof item.confidence === "number" ? { confidence: item.confidence } : {}),
     ...(item.sourceMode ? { sourceMode: item.sourceMode } : {})
   }));
+  // Normalize through JSON to strip undefined values — must match client-side behaviour
+  return JSON.parse(JSON.stringify(raw)) as typeof raw;
 }
 
 function toReportHashPayload(report: Report) {
-  const { reportHash: _reportHash, evidenceHash: _evidenceHash, ...payload } = report;
-  return payload;
+  const { reportHash: _reportHash, evidenceHash: _evidenceHash, attestation: _att, ...payload } = report;
+  // Normalize through JSON to remove undefined fields — must match client-side behaviour
+  return JSON.parse(JSON.stringify(payload)) as Record<string, unknown>;
 }
 
 function inferEvidenceConfidence(trace: XApiTrace, call?: XApiServiceResult<XApiCallResult>) {
@@ -573,6 +639,10 @@ function formatDateTime(date: Date) {
 function formatElapsed(ms: number) {
   const seconds = Math.max(1, Math.round(ms / 1000));
   return `${Math.floor(seconds / 60).toString().padStart(2, "0")}m ${(seconds % 60).toString().padStart(2, "0")}s`;
+}
+
+function stripModePrefix(text: string): string {
+  return text.replace(/^(live|fallback|partial|unconfigured):\s*/i, "");
 }
 
 function summarizeReasoning(output: Record<string, unknown>, fallbackReason?: string) {

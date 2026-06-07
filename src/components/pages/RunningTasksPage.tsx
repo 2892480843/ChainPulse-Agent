@@ -36,28 +36,71 @@ export function RunningTasksPage() {
     setLoading(true);
     setError("");
 
-    Promise.all([fetchStoredTasks(), taskIdParam ? fetchStoredTaskRun(taskIdParam) : Promise.resolve(null)])
-      .then(([items, selectedRun]) => {
-        if (cancelled) return;
-        setTaskList(items);
-        const selectedTask = selectedRun?.task ?? items.find((task) => task.id === taskIdParam) ?? items[0] ?? null;
-        setCurrentTask(selectedTask);
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return;
-        setTaskList([]);
-        setCurrentTask(null);
+    async function loadTasks() {
+      const [items, selectedRun] = await Promise.all([
+        fetchStoredTasks(),
+        taskIdParam ? fetchStoredTaskRun(taskIdParam).catch(() => null) : Promise.resolve(null)
+      ]);
+      if (cancelled) return;
+      setTaskList(items);
+      const selectedTask = selectedRun?.task ?? items.find((task) => task.id === taskIdParam) ?? items[0] ?? null;
+      setCurrentTask(selectedTask);
+      setLoading(false);
+    }
+
+    loadTasks().catch((err: unknown) => {
+      if (cancelled) return;
+      // Don't show error if we're waiting for a running task
+      if (!taskIdParam) {
         setError(err instanceof Error ? err.message : copy.loadFailed);
         notify(copy.loadFailed);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+      }
+      setTaskList([]);
+      setCurrentTask(null);
+      setLoading(false);
+    });
 
     return () => {
       cancelled = true;
     };
   }, [copy.loadFailed, notify, taskIdParam]);
+
+  // Poll for task updates — handles both "Running" tasks and tasks not yet saved
+  useEffect(() => {
+    if (!taskIdParam) return;
+    // Only poll if task is running or not yet found
+    const shouldPoll = !currentTask || currentTask.status === "Running";
+    if (!shouldPoll) return;
+
+    let cancelled = false;
+
+    const pollId = window.setInterval(async () => {
+      try {
+        const run = await fetchStoredTaskRun(taskIdParam).catch(() => null);
+        if (cancelled) return;
+        if (!run) return; // task not saved yet, keep polling
+
+        // Update current task
+        setCurrentTask(run.task);
+        setTaskList((prev) => {
+          const exists = prev.some((t) => t.id === run.task.id);
+          return exists ? prev.map((t) => t.id === run.task.id ? run.task : t) : [run.task, ...prev];
+        });
+
+        // Stop polling when completed
+        if (run.task.status !== "Running") {
+          window.clearInterval(pollId);
+        }
+      } catch {
+        // ignore poll errors
+      }
+    }, 2500);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(pollId);
+    };
+  }, [currentTask?.status, currentTask?.id, taskIdParam]);
 
   useEffect(() => {
     if (!logRegionRef.current) return;
@@ -88,8 +131,41 @@ export function RunningTasksPage() {
       ) : null}
 
       {loading ? (
-        <div className={cardClass}>
-          <EmptyState title={copy.loading} detail={copy.loadingDetail} />
+        <div className={clsx(cardClass, "p-4 sm:p-5")}>
+          <div className="flex items-start gap-3">
+            <div className="skeleton h-10 w-10 rounded-full shrink-0" />
+            <div className="flex-1 space-y-3 pt-1">
+              <div className="skeleton h-4 w-2/5 rounded" />
+              <div className="skeleton h-3 w-1/3 rounded" />
+              <div className="skeleton h-2 w-full rounded mt-4" />
+              <div className="grid grid-cols-3 gap-3 mt-4">
+                {[1,2,3].map(i => <div key={i} className="skeleton h-14 rounded-lg" />)}
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : !currentTask && taskIdParam ? (
+        /* Task not yet in store — agent just started, show a waiting indicator */
+        <div className={clsx(cardClass, "p-8")}>
+          <div className="flex flex-col items-center gap-4 text-center">
+            <div className="relative flex h-14 w-14 items-center justify-center">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-40" />
+              <span className="relative grid h-14 w-14 place-items-center rounded-full bg-blue-50 text-blue-600">
+                <svg className="h-7 w-7 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden>
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+              </span>
+            </div>
+            <div>
+              <p className="text-base font-semibold text-slate-950">
+                {language === "zh" ? "Agent 正在启动分析..." : "Agent is starting analysis..."}
+              </p>
+              <p className="mt-1 text-sm text-slate-500">
+                {language === "zh" ? "正在通过 xAPI MCP 采集数据，请稍候" : "Collecting data via xAPI MCP, please wait"}
+              </p>
+            </div>
+          </div>
         </div>
       ) : !currentTask ? (
         <div className={cardClass}>
@@ -102,6 +178,18 @@ export function RunningTasksPage() {
         </div>
       ) : (
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+          {currentTask.status === "Running" && (
+            <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+              <div className="flex items-center gap-2.5 font-semibold">
+                <span className="flex h-2 w-2">
+                  <span className="absolute inline-flex h-2 w-2 animate-ping rounded-full bg-blue-400 opacity-75" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-blue-600" />
+                </span>
+                {language === "zh" ? "Agent 正在分析中，请稍候..." : "Agent analysis in progress, please wait..."}
+              </div>
+              <p className="mt-1 text-xs opacity-80">{currentTask.currentStep}</p>
+            </div>
+          )}
           <div className={clsx(cardClass, "p-4 sm:p-5")}>
             <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
               <div>

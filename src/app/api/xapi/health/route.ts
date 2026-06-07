@@ -13,5 +13,16 @@ export async function GET(request: Request = new Request("http://localhost/api/x
   if (rateLimitFailure) return rejectJson(rateLimitFailure);
 
   const result = await createXApiService().healthCheck();
-  return xapiJson(result);
+  // Health check always returns 200 with current state (ok:true = endpoint responding, not that xAPI is live)
+  return xapiJson({
+    ...result,
+    ok: true,
+    data: result.data ?? {
+      configured: Boolean(process.env.XAPI_KEY?.trim()),
+      host: process.env.XAPI_ACTION_HOST ?? "action.xapi.to",
+      upstreamAvailable: false,
+      cli: "skipped" as const,
+      message: result.error?.message ?? "xAPI not configured"
+    }
+  });
 }

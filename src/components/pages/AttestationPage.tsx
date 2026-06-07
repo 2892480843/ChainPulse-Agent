@@ -188,8 +188,8 @@ export function AttestationPage() {
 
       <div className="grid gap-3 md:grid-cols-3">
         <RuntimeStatus label={copy.walletStatus} value={walletStatusLabel} tone={walletConnected ? "green" : "orange"} />
-        <RuntimeStatus label={copy.contractStatus} value={readiness.state} tone={readiness.state === "live ready" ? "green" : readiness.state === "not configured" ? "red" : "orange"} />
-        <RuntimeStatus label={copy.backendStatus} value={backendSyncState} tone={backendSyncState === "synced" ? "green" : backendSyncState === "failed" ? "red" : "orange"} />
+        <RuntimeStatus label={copy.contractStatus} value={localizeReadinessState(readiness.state, copy)} tone={readiness.state === "live ready" ? "green" : readiness.state === "not configured" ? "red" : "orange"} />
+        <RuntimeStatus label={copy.backendStatus} value={localizeBackendState(backendSyncState, copy)} tone={backendSyncState === "synced" ? "green" : backendSyncState === "failed" ? "red" : "orange"} />
       </div>
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
@@ -205,7 +205,7 @@ export function AttestationPage() {
                     <ModeBadge mode={selectedReport.mode} />
                     <StatusBadge status={selectedReport.status} />
                     <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
-                      {selectedReport.sourceMode ?? "live"}
+                      {localizeSourceMode(selectedReport.sourceMode ?? "live", copy)}
                     </span>
                   </div>
                 </div>
@@ -223,14 +223,23 @@ export function AttestationPage() {
               </label>
             </div>
 
-            <div className="flex flex-wrap gap-2">
-              <button className={buttonClass} type="button" onClick={connectWallet} disabled={isAttesting}>
-                <Wallet aria-hidden className="h-4 w-4" />
-                {walletConnected ? copy.walletConnected : copy.connectWallet}
+            <div className="flex shrink-0 flex-wrap gap-2">
+              <button className="inline-flex min-h-9 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 whitespace-nowrap transition-colors hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-50" type="button" onClick={connectWallet} disabled={isAttesting}>
+                <Wallet aria-hidden className="h-4 w-4 shrink-0" />
+                <span className="truncate max-w-[120px]">{walletConnected ? copy.walletConnected : copy.connectWallet}</span>
               </button>
-              <button className={primaryButtonClass} type="button" onClick={attestOnChain} disabled={!canWriteWithWallet} title={canWriteWithWallet ? copy.openWalletTx : `${copy.missing}: ${readiness.missing.join(", ") || copy.walletRequired}`}>
-                {isAttesting ? <Loader2 aria-hidden className="h-4 w-4 animate-spin" /> : <Wallet aria-hidden className="h-4 w-4" />}
-                {isAttesting ? copy.writing : copy.write}
+              <button className="inline-flex min-h-9 cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white whitespace-nowrap transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-200 disabled:cursor-not-allowed disabled:bg-slate-300" type="button" onClick={attestOnChain} disabled={!canWriteWithWallet} title={canWriteWithWallet ? copy.openWalletTx : `${copy.missing}: ${readiness.missing.join(", ") || copy.walletRequired}`}>
+                {isAttesting ? (
+                  <>
+                    <Loader2 aria-hidden className="h-4 w-4 shrink-0 animate-spin" />
+                    <span>{copy.writing}</span>
+                  </>
+                ) : (
+                  <>
+                    <Wallet aria-hidden className="h-4 w-4 shrink-0" />
+                    <span>{copy.write}</span>
+                  </>
+                )}
               </button>
             </div>
           </div>
@@ -364,6 +373,35 @@ function FlowStep({ done, label }: { done: boolean; label: string }) {
       <span className="text-slate-700">{label}</span>
     </div>
   );
+}
+
+type AttestationCopyType = (typeof attestationCopy)[keyof typeof attestationCopy];
+
+function localizeReadinessState(state: string, copy: AttestationCopyType) {
+  if ("readinessLive" in copy) {
+    if (state === "live ready") return copy.readinessLive as string;
+    if (state === "read only") return copy.readinessReadOnly as string;
+    return copy.readinessNotConfigured as string;
+  }
+  return state;
+}
+
+function localizeBackendState(state: string, copy: AttestationCopyType) {
+  if ("backendSynced" in copy) {
+    if (state === "synced") return copy.backendSynced as string;
+    if (state === "failed") return copy.backendFailed as string;
+    return copy.backendPending as string;
+  }
+  return state;
+}
+
+function localizeSourceMode(mode: string, copy: AttestationCopyType) {
+  if ("sourceLive" in copy) {
+    if (mode === "live") return copy.sourceLive as string;
+    if (mode === "partial") return copy.sourcePartial as string;
+    return copy.sourceFallback as string;
+  }
+  return mode;
 }
 
 function recordFromReport(report: Report): AttestationRecord | null {
@@ -500,7 +538,16 @@ const attestationCopy = {
     downloadBundle: "Download Proof Bundle",
     writeVerified: "On-chain write and readback verified",
     writeSubmitted: "Transaction submitted; readback needs review",
-    writeFailed: "On-chain attestation failed"
+    writeFailed: "On-chain attestation failed",
+    readinessLive: "live ready",
+    readinessReadOnly: "read only",
+    readinessNotConfigured: "not configured",
+    backendSynced: "synced",
+    backendPending: "pending",
+    backendFailed: "failed",
+    sourceLive: "live",
+    sourcePartial: "partial",
+    sourceFallback: "fallback"
   },
   zh: {
     eyebrow: "链上证明",
@@ -556,6 +603,15 @@ const attestationCopy = {
     downloadBundle: "下载证明包",
     writeVerified: "链上写入和回读已验证",
     writeSubmitted: "交易已提交，回读需要复核",
-    writeFailed: "链上证明失败"
+    writeFailed: "链上证明失败",
+    readinessLive: "实时就绪",
+    readinessReadOnly: "只读模式",
+    readinessNotConfigured: "未配置",
+    backendSynced: "已同步",
+    backendPending: "待同步",
+    backendFailed: "同步失败",
+    sourceLive: "实时",
+    sourcePartial: "部分",
+    sourceFallback: "降级"
   }
 } as const;
