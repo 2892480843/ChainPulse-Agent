@@ -1,10 +1,5 @@
-import { Suspense } from "react";
-import DashboardApp from "@/components/DashboardApp";
+import { redirect } from "next/navigation";
 
 export default function DemoRoute() {
-  return (
-    <Suspense fallback={null}>
-      <DashboardApp />
-    </Suspense>
-  );
+  redirect("/workspace");
 }

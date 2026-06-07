@@ -47,7 +47,15 @@ NEXT_PUBLIC_EXPLORER_BASE_URL=https://sepolia.etherscan.io
 默认合约 ABI：
 
 ```solidity
-function attestReport(string reportId, bytes32 reportHash, bytes32 evidenceHash)
+function attest(
+  bytes32 reportHash,
+  bytes32 evidenceHash,
+  string topic,
+  uint8 riskScore,
+  uint8 alphaScore,
+  string verdict,
+  string metadataURI
+) returns (uint256 reportId)
 ```
 
 链上调用路径：
@@ -56,6 +64,20 @@ function attestReport(string reportId, bytes32 reportHash, bytes32 evidenceHash)
 2. `prepareChainAttestation()` 用 `viem` 编码 calldata。
 3. `chainAttestationClient.attestReport()` 调用浏览器钱包的 `eth_sendTransaction`。
 4. 钱包返回 tx hash 后，页面更新 receipt。
+
+## Sepolia 自动验证
+
+项目包含 `contracts/SignalAttestation.sol` 和 Sepolia 脚本：
+
+```bash
+npm run contract:compile
+npm run sepolia:deploy
+npm run sepolia:check
+npm run sepolia:attest:test
+npm run sepolia:verify
+```
+
+`sepolia:attest:test` 会确认合约 bytecode、调用 `attest(...)`、等待交易成功、解码 `ReportAttested` 事件，并读取 `getReport(reportId)` 比对 reportHash、evidenceHash、topic、riskScore、alphaScore、verdict 与 metadataURI。`sepolia:verify` 需要 `ETHERSCAN_API_KEY`；没有 key 时会跳过源码验证但保留链上功能验证。
 
 ## 状态边界
 

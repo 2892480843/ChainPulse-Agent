@@ -60,6 +60,7 @@ export interface XApiHealthStatus {
   message: string;
 }
 
-export type XApiServiceResult<T> = Required<Pick<XApiRouteResponse<T>, "ok" | "mode" | "data" | "trace">> & {
+export type XApiServiceResult<T> = Pick<XApiRouteResponse<T>, "ok" | "mode" | "data"> & {
+  trace: XApiRuntimeTrace;
   error?: XApiRouteError;
 };

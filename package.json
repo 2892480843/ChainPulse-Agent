@@ -3,12 +3,17 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -H 0.0.0.0",
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "contract:compile": "node scripts/sepolia.mjs compile",
+    "sepolia:deploy": "node scripts/sepolia.mjs deploy",
+    "sepolia:check": "node scripts/sepolia.mjs check",
+    "sepolia:attest:test": "node scripts/sepolia.mjs attest-test",
+    "sepolia:verify": "node scripts/sepolia.mjs verify"
   },
   "dependencies": {
     "clsx": "^2.1.1",
@@ -29,6 +34,7 @@
     "eslint": "^9.39.1",
     "eslint-config-next": "16.2.7",
     "jsdom": "^27.2.0",
+    "solc": "^0.8.35",
     "tailwindcss": "4.3.0",
     "typescript": "^5.9.3",
     "vitest": "4.1.8"
