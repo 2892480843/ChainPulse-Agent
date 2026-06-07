@@ -41,7 +41,7 @@ export function Sidebar() {
       </div>
 
       <nav className="mt-5 space-y-0.5">
-        {navigationItems.map((item, index) => {
+        {navigationItems.filter((item) => item.key !== "watchlist").map((item, index) => {
           const Icon = iconMap[item.key];
           const active = pathname === item.path || pathname?.startsWith(`${item.path}/`);
           return (
@@ -67,11 +67,6 @@ export function Sidebar() {
         })}
       </nav>
 
-      <div className="mt-5 grid gap-3">
-        <QuotaCard label={t("shell.evidenceQuota")} value="72%" detail={t("shell.evidenceQuotaDetail")} tone="blue" />
-        <QuotaCard label={t("shell.agentCapacity")} value="18/25" detail={t("shell.agentCapacityDetail")} tone="green" />
-      </div>
-
       <div className="mt-5 space-y-1 border-t border-slate-200 pt-4 text-xs text-slate-500">
         <p>{t("shell.reasoning")}</p>
         <p>{t("shell.evidenceTools")}</p>
@@ -81,22 +76,6 @@ export function Sidebar() {
   );
 }
 
-function QuotaCard({ label, value, detail, tone }: { label: string; value: string; detail: string; tone: "blue" | "green" }) {
-  const progress = value.includes("%") ? Number(value.replace("%", "")) : 72;
-
-  return (
-    <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-3">
-      <div className="flex items-center justify-between">
-        <p className="text-xs font-medium text-slate-600">{label}</p>
-        <p className={clsx("text-xs font-semibold", tone === "blue" ? "text-blue-700" : "text-emerald-700")}>{value}</p>
-      </div>
-      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200">
-        <div className={clsx("h-full rounded-full", tone === "blue" ? "bg-blue-500" : "bg-emerald-500")} style={{ width: `${progress}%` }} />
-      </div>
-      <p className="mt-2 text-[11px] text-slate-500">{detail}</p>
-    </div>
-  );
-}
 
 function LogoMark() {
   return (
