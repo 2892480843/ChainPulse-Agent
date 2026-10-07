@@ -1,5 +1,7 @@
 # ChainPulse Agent
 
+![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white) ![Next.js 16](https://img.shields.io/badge/Next.js%2016-000000?logo=nextdotjs&logoColor=white) ![React 19](https://img.shields.io/badge/React%2019-61DAFB?logo=react&logoColor=black) ![Solidity ^0.8.24](https://img.shields.io/badge/Solidity-^0.8.24-363636?logo=solidity&logoColor=white) ![Sepolia](https://img.shields.io/badge/Sepolia-testnet-627EEA?logo=ethereum&logoColor=white) ![viem](https://img.shields.io/badge/viem-wallet%20signing-F04A8D)
+
 An autonomous AI analysis agent that collects multi-source crypto market evidence via xAPI MCP, generates structured risk and alpha reports, and anchors the report and evidence integrity hashes on-chain through a Sepolia smart contract.
 
 ## Problem
